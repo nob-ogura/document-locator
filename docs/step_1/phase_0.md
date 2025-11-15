@@ -16,14 +16,14 @@ Phase 0 は Day 0-1 で gdrive-indexer/search の足場を固め、以降の開�
 
 ### T0-1: Python実行基盤・パッケージ管理・Lint整備
 - **作業内容**
-  - Python 3.13 系を明示して Poetry もしくは uv を採用し、`pyproject.toml` とロックファイルを生成。
+  - Python 3.13 系を明示して uv を採用し、`pyproject.toml` とロックファイルを生成。
   - 共通ディレクトリ構造(`app/`, `tests/`, `scripts/` など)を作成し、`gdrive_indexer`/`gdrive_search` パッケージを import できるようにする。
   - 開発依存に `ruff`, `black`, `mypy`, `pytest` を追加し、`pyproject.toml` で設定 (target version, line length 等)。
   - `make lint`, `make format`, `make typecheck`, `make test` などローカル実行コマンドを `Makefile` もしくは `uv run` スクリプトで提供。
 - **受入基準**
-  - `poetry install` または `uv sync` で依存が再現可能。
+  - `uv sync` で依存が再現可能。
   - `ruff check`, `black --check`, `mypy`, `pytest` が素のリポジトリで成功する。
-  - README か `docs/Requirements.md` にセットアップ手順が追記され、オンボーディングが 15 分以内で終わる情報が揃う。
+  - README にセットアップ手順が追記され、オンボーディングが 15 分以内で終わる情報が揃う。
 
 ### T0-2: 設定/秘密情報の読み込みヘルパー実装
 - **作業内容**
@@ -49,8 +49,8 @@ Phase 0 は Day 0-1 で gdrive-indexer/search の足場を固め、以降の開�
 
 ### T0-4: CIパイプライン整備
 - **作業内容**
-  - GitHub Actions (例: `.github/workflows/ci.yml`) を追加し、`python -m pip install uv/poetry` → 依存解決 → `ruff`, `black --check`, `mypy`, `pytest` を並列または段階的に実行。
-  - キャッシュ戦略 (Poetry/uv、`.venv`、`.mypy_cache`) を設定して 5 分以内にワークフローが完走するよう調整。
+  - GitHub Actions (例: `.github/workflows/ci.yml`) を追加し、`python -m pip install uv` → 依存解決 → `ruff`, `black --check`, `mypy`, `pytest` を並列または段階的に実行。
+  - キャッシュ戦略 (uv、`.venv`、`.mypy_cache`) を設定して 5 分以内にワークフローが完走するよう調整。
   - main ブランチ push と Pull Request で CI が走るようトリガーを設定し、最小限のバッジや README 記載を追加。
 - **受入基準**
   - PR 作成時に自動で lint/test が実行され、fail するとマージできない状態を確認。
