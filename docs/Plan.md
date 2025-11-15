@@ -25,8 +25,16 @@
 - repositoryテスト: Upsert/検索/削除、`visible_file_ids` フィルタの必須適用 (NFR-SEC-01)。
 
 ### Phase 2: クローラーCLI (`gdrive-indexer`) (Day 2-5)
+
 - **Drive検出/状態管理** (Design 4.1-1,6): `drives.list` → `crawler_state` CRUD、フル/デルタモード引数の実装。各ドライブごとの実行ループを用意。
-- **差分ポーリング** (4.1-2, Step 3フロー): `changes.getStartPageToken`, `changes.list` ラッパーとレート制御（指数バックオフ、429時の再試行最大3回）。
+- **差分ポーリング (改訂版)** (4.1-2, Step 3フロー):
+  - Google Drive APIクライアントラッパーを実装し、`changes.getStartPageToken`, `changes.list` などの呼び出しを抽象化する。
+  - **堅牢なレート制御とリトライ戦略:**
+    - **HTTP `429 (Too Many Requests)`** に加え、**HTTP `403 (Forbidden)`** であり、かつレスポンスボディのエラー理由 (`reason`) が `userRateLimitExceeded` または `rateLimitExceeded` である場合を、レート制限エラーとして適切にハンドリングする。
+    - APIレスポンスに **`Retry-After` ヘッダー**が含まれる場合は、その指示された秒数を最優先で待機する。
+    - `Retry-After` がない場合は、**ジッター（ランダムな揺らぎ）を加えた指数バックオフ戦略**に基づき再試行（最大3回など）を実施する。
+  - **共有ドライブ対応の徹底:**
+    - APIクライアントラッパーは、`files` や `changes` API群の呼び出し時に、**`supportsAllDrives=true`** および **`includeItemsFromAllDrives=true`** パラメータを常時付与する設計とする。
 - **コンテンツ抽出** (4.1-3, Step 4): MIME種別ごとに抽出戦略を実装。Google Docs/Slides/Sheetsの `files.export`, バイナリ(PDF)のtext抽出。失敗時は WARNING とスキップログ。
 - **AIメタデータ生成** (4.1-4, Step 5): GPT-4o mini 呼び出しラッパー、レスポンススキーマ検証、3回までのリトライと代替出力 (空summary)。
 - **ベクトル化** (4.1-5, Step 6): `text-embedding-3-small` クライアントと埋め込みキャッシュ（オプション）。入力は `title + summary + keywords`。
