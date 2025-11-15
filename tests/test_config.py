@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Dict
 
 import pytest
 
@@ -15,7 +14,7 @@ REQUIRED_KEYS = [
 ]
 
 
-def sample_values() -> Dict[str, str]:
+def sample_values() -> dict[str, str]:
     return {
         "GOOGLE_OAUTH_CLIENT_ID": "client-id-from-env",
         "GOOGLE_OAUTH_CLIENT_SECRET": "client-secret",
@@ -32,13 +31,14 @@ def clear_config_env(monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.delenv(key, raising=False)
 
 
-def write_env_file(path: Path, values: Dict[str, str]) -> Path:
+def write_env_file(path: Path, values: dict[str, str]) -> Path:
     env_file = path / ".env"
-    env_file.write_text("\n".join(f"{key}={value}" for key, value in values.items()), encoding="utf-8")
+    lines = (f"{key}={value}" for key, value in values.items())
+    env_file.write_text("\n".join(lines), encoding="utf-8")
     return env_file
 
 
-def write_config_file(path: Path, *, overrides: Dict[str, str]) -> Path:
+def write_config_file(path: Path, *, overrides: dict[str, str]) -> Path:
     config_path = path / "config.toml"
     config_path.write_text(
         "\n".join(
@@ -78,7 +78,11 @@ def test_config_file_overrides_env_file(tmp_path: Path) -> None:
     from app.config import load_config
 
     env_file = write_env_file(tmp_path, sample_values())
-    overrides = {**sample_values(), "OPENAI_API_KEY": "sk-config", "SUPABASE_URL": "https://config.supabase.co"}
+    overrides = {
+        **sample_values(),
+        "OPENAI_API_KEY": "sk-config",
+        "SUPABASE_URL": "https://config.supabase.co",
+    }
     config_file = write_config_file(tmp_path, overrides=overrides)
 
     config = load_config(env_file=env_file, config_file=config_file)
@@ -86,7 +90,10 @@ def test_config_file_overrides_env_file(tmp_path: Path) -> None:
     assert config.supabase.url == "https://config.supabase.co"
 
 
-def test_environment_variables_have_highest_priority(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_environment_variables_have_highest_priority(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     from app.config import load_config
 
     env_file = write_env_file(tmp_path, sample_values())
@@ -110,7 +117,10 @@ def test_missing_value_raises_error(tmp_path: Path) -> None:
     assert "OPENAI_API_KEY" in str(excinfo.value)
 
 
-def test_doctor_returns_false_when_invalid(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+def test_doctor_returns_false_when_invalid(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
     from app.config import doctor
 
     env_values = sample_values()

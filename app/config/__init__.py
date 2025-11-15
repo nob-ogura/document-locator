@@ -1,13 +1,12 @@
 from __future__ import annotations
 
+import os
+import sys
+import tomllib
 from collections.abc import Mapping, MutableMapping
 from dataclasses import dataclass
-import os
 from pathlib import Path
-import sys
-from typing import Any, Dict, Tuple
-
-import tomllib
+from typing import Any
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 DEFAULT_ENV_FILE = PROJECT_ROOT / ".env"
@@ -15,7 +14,7 @@ DEFAULT_CONFIG_FILE = Path.home() / ".config" / "document_locator" / "config.tom
 ENV_FILE_ENV_VAR = "DOCUMENT_LOCATOR_ENV_FILE"
 CONFIG_FILE_ENV_VAR = "DOCUMENT_LOCATOR_CONFIG_FILE"
 
-_PATH_TO_ENV_KEY: Dict[Tuple[str, str], str] = {
+_PATH_TO_ENV_KEY: dict[tuple[str, str], str] = {
     ("google", "oauth_client_id"): "GOOGLE_OAUTH_CLIENT_ID",
     ("google", "oauth_client_secret"): "GOOGLE_OAUTH_CLIENT_SECRET",
     ("supabase", "url"): "SUPABASE_URL",
@@ -25,7 +24,7 @@ _PATH_TO_ENV_KEY: Dict[Tuple[str, str], str] = {
 }
 _ENV_KEY_TO_PATH = {env_name: path for path, env_name in _PATH_TO_ENV_KEY.items()}
 
-_SECTION_FIELDS: Dict[str, set[str]] = {}
+_SECTION_FIELDS: dict[str, set[str]] = {}
 for section, field in _PATH_TO_ENV_KEY:
     _SECTION_FIELDS.setdefault(section, set()).add(field)
 
@@ -85,7 +84,7 @@ def load_config(
     env_path = _resolve_env_file(env_file)
     config_path = _resolve_config_file(config_file)
 
-    merged: Dict[str, Any] = {}
+    merged: dict[str, Any] = {}
     _deep_merge(merged, _env_mapping_to_nested(_parse_env_file(env_path)))
     _deep_merge(merged, _filter_known_sections(_read_config_file(config_path)))
     runtime_values = environ if environ is not None else os.environ
@@ -110,7 +109,7 @@ def doctor(*, env_file: Path | str | None = None, config_file: Path | str | None
 
 
 def _build_app_config(data: Mapping[str, Any]) -> AppConfig:
-    values: Dict[Tuple[str, str], str] = {}
+    values: dict[tuple[str, str], str] = {}
     missing: list[str] = []
     for path, env_name in _PATH_TO_ENV_KEY.items():
         section_name, key = path
@@ -157,7 +156,7 @@ def _resolve_config_file(explicit: Path | str | None) -> Path:
     return DEFAULT_CONFIG_FILE
 
 
-def _parse_env_file(path: Path) -> Dict[str, str]:
+def _parse_env_file(path: Path) -> dict[str, str]:
     try:
         contents = path.read_text(encoding="utf-8")
     except FileNotFoundError:
@@ -165,7 +164,7 @@ def _parse_env_file(path: Path) -> Dict[str, str]:
     except OSError as exc:
         raise ConfigError(f"Failed to read env file {path}: {exc}") from exc
 
-    values: Dict[str, str] = {}
+    values: dict[str, str] = {}
     for raw_line in contents.splitlines():
         line = raw_line.strip()
         if not line or line.startswith("#"):
@@ -197,12 +196,12 @@ def _read_config_file(path: Path) -> Mapping[str, Any]:
         raise ConfigError(f"Failed to read config file {path}: {exc}") from exc
 
 
-def _filter_known_sections(raw: Mapping[str, Any]) -> Dict[str, Any]:
-    filtered: Dict[str, Any] = {}
+def _filter_known_sections(raw: Mapping[str, Any]) -> dict[str, Any]:
+    filtered: dict[str, Any] = {}
     for section, allowed_fields in _SECTION_FIELDS.items():
         raw_section = raw.get(section)
         if isinstance(raw_section, Mapping):
-            filtered_section: Dict[str, Any] = {}
+            filtered_section: dict[str, Any] = {}
             for field in allowed_fields:
                 if field in raw_section:
                     filtered_section[field] = str(raw_section[field])
@@ -211,8 +210,8 @@ def _filter_known_sections(raw: Mapping[str, Any]) -> Dict[str, Any]:
     return filtered
 
 
-def _env_mapping_to_nested(mapping: Mapping[str, Any]) -> Dict[str, Any]:
-    nested: Dict[str, Any] = {}
+def _env_mapping_to_nested(mapping: Mapping[str, Any]) -> dict[str, Any]:
+    nested: dict[str, Any] = {}
     for key, value in mapping.items():
         path = _ENV_KEY_TO_PATH.get(key)
         if not path:
@@ -221,7 +220,7 @@ def _env_mapping_to_nested(mapping: Mapping[str, Any]) -> Dict[str, Any]:
     return nested
 
 
-def _assign_path(target: MutableMapping[str, Any], path: Tuple[str, ...], value: Any) -> None:
+def _assign_path(target: MutableMapping[str, Any], path: tuple[str, ...], value: Any) -> None:
     current: MutableMapping[str, Any] = target
     for component in path[:-1]:
         next_value = current.get(component)

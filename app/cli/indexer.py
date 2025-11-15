@@ -3,10 +3,9 @@
 from __future__ import annotations
 
 import argparse
-from typing import Sequence
+from collections.abc import Sequence
 
 from app.cli import _common
-
 
 PROG_NAME = "gdrive-indexer"
 DESCRIPTION = "Index Google Drive documents into the document-locator data store."

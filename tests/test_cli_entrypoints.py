@@ -3,10 +3,8 @@ from __future__ import annotations
 import json
 from importlib import import_module
 from pathlib import Path
-from typing import Dict
 
 import pytest
-
 
 REQUIRED_ENV = {
     "GOOGLE_OAUTH_CLIENT_ID": "client-id",
@@ -19,7 +17,7 @@ REQUIRED_ENV = {
 
 
 @pytest.fixture()
-def runtime_env(monkeypatch: pytest.MonkeyPatch) -> Dict[str, str]:
+def runtime_env(monkeypatch: pytest.MonkeyPatch) -> dict[str, str]:
     for key, value in REQUIRED_ENV.items():
         monkeypatch.setenv(key, value)
     return REQUIRED_ENV
@@ -76,7 +74,7 @@ def test_cli_help_exits_cleanly(module_name: str) -> None:
 def test_cli_main_emits_json_log(
     module_name: str,
     cli_name: str,
-    runtime_env: Dict[str, str],
+    runtime_env: dict[str, str],
     capsys: pytest.CaptureFixture[str],
 ) -> None:
     module = import_module(module_name)

@@ -3,10 +3,9 @@
 from __future__ import annotations
 
 import argparse
-from typing import Sequence
+from collections.abc import Sequence
 
 from app.cli import _common
-
 
 PROG_NAME = "gdrive-search"
 DESCRIPTION = "Search the indexed Google Drive corpus."

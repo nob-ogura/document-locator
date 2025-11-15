@@ -4,8 +4,9 @@ from __future__ import annotations
 
 import argparse
 import logging
+from collections.abc import Callable, Sequence
 from pathlib import Path
-from typing import TYPE_CHECKING, Callable, Sequence, cast
+from typing import TYPE_CHECKING, cast
 
 from app.config import ConfigError, load_config
 from app.logging import configure_logging
@@ -28,7 +29,7 @@ class CLIArgs(argparse.Namespace):
     log_destination: str
     config: Path | None
     env_file: Path | None
-    app_config: "AppConfig"
+    app_config: AppConfig
 
 
 def build_parser(*, prog: str, description: str) -> argparse.ArgumentParser:
@@ -95,7 +96,7 @@ def run_cli(
         )
         return 2
 
-    setattr(args, "app_config", config)
+    args.app_config = config
     logger.info("%s CLI ready", display_name, extra={"cli": cli_name})
     return runner(args)
 
@@ -121,8 +122,9 @@ def _log_format_type(value: str) -> str:
 def _log_destination_type(value: str) -> str:
     normalized = value.lower()
     if normalized not in _LOG_DESTINATION_CHOICES:
+        expected = ", ".join(_LOG_DESTINATION_CHOICES)
         raise argparse.ArgumentTypeError(
-            f"Invalid log destination '{value}'. Expected one of: {', '.join(_LOG_DESTINATION_CHOICES)}"
+            f"Invalid log destination '{value}'. Expected one of: {expected}"
         )
     return normalized
 

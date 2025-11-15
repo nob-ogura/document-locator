@@ -1,5 +1,7 @@
 # document-locator
 
+[![CI](https://github.com/nob-ogura/document-locator/actions/workflows/ci.yml/badge.svg)](https://github.com/nob-ogura/document-locator/actions/workflows/ci.yml)
+
 ## ローカル開発環境のセットアップ
 
 このリポジトリでは [uv](https://docs.astral.sh/uv/) を使って **Python 3.13** を標準化しています。
@@ -24,6 +26,10 @@
    - `make test` &rarr; `pytest`
 
 `app/` ディレクトリには後続フェーズで実装を進める Python パッケージ（`gdrive_indexer`, `gdrive_search`）があります。`tests/` には対応するユニットテストが、`scripts/` にはアドホックな自動化スクリプトが配置されます。
+
+## CI
+
+`main` ブランチへの push と Pull Request は GitHub Actions の `CI` ワークフローで自動的に `uv sync` を行い、`ruff`, `black --check`, `mypy`, `pytest` を走らせます。ローカルと同じ `make` コマンドで再現できるので、失敗したチェックは手元で `make lint && make typecheck && make test` を実行して確認してください。
 
 ## Phase 0 Secrets & Environment Variables
 `docs/step_1/phase_0.md` では Phase 0 のタスクを着手する前に、Google API 認証情報や OpenAI/Supabase のキーを `.env.sample` に整理しておくことが求められています。以下に必要な変数と、それぞれの入手手順をまとめます。
