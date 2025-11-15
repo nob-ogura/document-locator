@@ -5,7 +5,7 @@
 - 成果物: Pythonベースの `gdrive-indexer`/`gdrive-search` CLI、Supabase(pgvector) スキーマ、監視・テストの仕組み。
 
 ## 2. 前提・スコープ
-- 言語はPython 3.11系、CLIは `app/crawler`, `app/search` 構成案に従う。
+- 言語はPython 3.13系、CLIは `app/crawler`, `app/search` 構成案に従う。
 - 外部サービス: Google Drive API, OpenAI API, Supabase(PostgreSQL + pgvector)。
 - MVPでは共有ドライブのみ対象、ハイブリッド検索やWeb UIは非スコープ。
 
