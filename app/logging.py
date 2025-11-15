@@ -101,7 +101,7 @@ def _resolve_level(value: str | int) -> int:
         return value
     normalized = value.upper()
     resolved = logging.getLevelName(normalized)
-    if isinstance(resolved, str):  # logging returns the input string when it fails
+    if not isinstance(resolved, int):  # logging returns the input string when it fails
         raise ValueError(f"Unknown log level: {value}")
     return resolved
 

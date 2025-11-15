@@ -55,7 +55,6 @@ python_version = "3.13"
 strict = true
 warn_unreachable = true
 show_error_codes = true
-mypy_path = ["app"]
 
 [tool.pytest.ini_options]
 minversion = "8.0"

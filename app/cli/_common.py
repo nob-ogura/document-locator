@@ -9,7 +9,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, cast
 
 from app.config import ConfigError, load_config
-from app.logging import configure_logging
+from app.logging import LogDestination, LogFormat, configure_logging
 
 if TYPE_CHECKING:
     from app.config import AppConfig
@@ -25,8 +25,8 @@ CliRunner = Callable[[argparse.Namespace], int]
 
 class CLIArgs(argparse.Namespace):
     log_level: str
-    log_format: str
-    log_destination: str
+    log_format: LogFormat
+    log_destination: LogDestination
     config: Path | None
     env_file: Path | None
     app_config: AppConfig
@@ -110,23 +110,23 @@ def _log_level_type(value: str) -> str:
     return normalized
 
 
-def _log_format_type(value: str) -> str:
+def _log_format_type(value: str) -> LogFormat:
     normalized = value.lower()
     if normalized not in _LOG_FORMAT_CHOICES:
         raise argparse.ArgumentTypeError(
             f"Invalid log format '{value}'. Expected one of: {', '.join(_LOG_FORMAT_CHOICES)}"
         )
-    return normalized
+    return cast(LogFormat, normalized)
 
 
-def _log_destination_type(value: str) -> str:
+def _log_destination_type(value: str) -> LogDestination:
     normalized = value.lower()
     if normalized not in _LOG_DESTINATION_CHOICES:
         expected = ", ".join(_LOG_DESTINATION_CHOICES)
         raise argparse.ArgumentTypeError(
             f"Invalid log destination '{value}'. Expected one of: {expected}"
         )
-    return normalized
+    return cast(LogDestination, normalized)
 
 
 __all__ = [
