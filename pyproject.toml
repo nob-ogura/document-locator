@@ -8,6 +8,10 @@ license = {text = "Proprietary"}
 authors = [{ name = "document-locator developers" }]
 dependencies = []
 
+[project.scripts]
+gdrive-indexer = "app.cli.indexer:main"
+gdrive-search = "app.cli.search:main"
+
 [build-system]
 requires = ["hatchling>=1.25"]
 build-backend = "hatchling.build"
