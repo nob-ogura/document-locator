@@ -5,11 +5,13 @@ from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Any
+from uuid import uuid4
 
 import pytest
 from app.db import repositories
 from app.db.client import ConnectionMode
 from psycopg.errors import Error as PsycopgError
+from tests.conftest import DbRepositoryTestContext
 
 
 @dataclass(slots=True)
@@ -322,3 +324,115 @@ def test_crawler_state_get_returns_none_when_missing(monkeypatch: pytest.MonkeyP
     repo = repositories.CrawlerStateRepository()
 
     assert repo.get_state("drive-x") is None
+
+
+@pytest.mark.db
+def test_file_index_repository_integration(db_test_context: DbRepositoryTestContext) -> None:
+    repo = db_test_context.file_repo
+    drive_id = f"drive-int-{uuid4()}"
+    now = datetime.now(tz=UTC).replace(microsecond=0)
+    file_one = repositories.FileRecord(
+        file_id=f"file-{uuid4()}",
+        drive_id=drive_id,
+        file_name="Integration Doc A",
+        summary="first doc",
+        keywords="alpha,beta",
+        embedding=_build_embedding(0.0),
+        mime_type="text/plain",
+        last_modifier="integration",
+        updated_at=now,
+        deleted_at=None,
+    )
+    file_two = repositories.FileRecord(
+        file_id=f"file-{uuid4()}",
+        drive_id=drive_id,
+        file_name="Integration Doc B",
+        summary="second doc",
+        keywords="gamma,delta",
+        embedding=_build_embedding(0.5),
+        mime_type="application/pdf",
+        last_modifier="integration",
+        updated_at=now,
+        deleted_at=None,
+    )
+    db_test_context.register_file_records([file_one, file_two])
+
+    inserted = repo.upsert_files([file_one, file_two])
+    assert inserted == 2
+
+    results = repo.search(query_embedding=_build_embedding(0.0), drive_ids=[drive_id], limit=5)
+    assert [result.file_id for result in results] == [file_one.file_id, file_two.file_id]
+    assert results[0].deleted_at is None
+    assert pytest.approx(results[0].similarity) == 1.0
+
+    filtered = repo.search(
+        query_embedding=_build_embedding(0.0),
+        drive_ids=[drive_id],
+        min_similarity=0.8,
+    )
+    assert [result.file_id for result in filtered] == [file_one.file_id]
+
+    updated_rows = repo.mark_file_deleted(file_one.file_id)
+    assert updated_rows == 1
+
+    remaining = repo.search(query_embedding=_build_embedding(0.0), drive_ids=[drive_id])
+    assert [result.file_id for result in remaining] == [file_two.file_id]
+
+    drive_updates = repo.mark_drive_deleted(drive_id)
+    assert drive_updates == 1  # only the second file was still active
+
+    assert repo.search(query_embedding=_build_embedding(0.0), drive_ids=[drive_id]) == []
+    deleted_records = repo.search(
+        query_embedding=_build_embedding(0.0),
+        drive_ids=[drive_id],
+        include_deleted=True,
+    )
+    assert len(deleted_records) == 2
+    assert all(record.deleted_at is not None for record in deleted_records)
+
+
+@pytest.mark.db
+def test_crawler_state_repository_integration(db_test_context: DbRepositoryTestContext) -> None:
+    repo = db_test_context.crawler_repo
+    drive_id = f"drive-state-{uuid4()}"
+    db_test_context.register_crawler_drive(drive_id)
+    first_run = datetime(2024, 7, 1, 12, 0, tzinfo=UTC)
+
+    state = repositories.CrawlerState(
+        drive_id=drive_id,
+        start_page_token="token-1",
+        last_run_at=first_run,
+        last_status="success",
+        updated_at=None,
+    )
+    saved = repo.upsert_state(state)
+    assert saved.drive_id == drive_id
+    assert saved.start_page_token == "token-1"
+
+    fetched = repo.get_state(drive_id)
+    assert fetched is not None
+    assert fetched.start_page_token == "token-1"
+
+    states = repo.list_states()
+    assert any(existing.drive_id == drive_id for existing in states)
+
+    second_run = datetime(2024, 7, 2, 15, 0, tzinfo=UTC)
+    updated = repo.upsert_state(
+        repositories.CrawlerState(
+            drive_id=drive_id,
+            start_page_token="token-2",
+            last_run_at=second_run,
+            last_status="failed:timeout",
+            updated_at=None,
+        )
+    )
+    assert updated.start_page_token == "token-2"
+    assert updated.last_status == "failed:timeout"
+
+    deleted = repo.delete_state(drive_id)
+    assert deleted == 1
+    assert repo.get_state(drive_id) is None
+
+
+def _build_embedding(value: float) -> list[float]:
+    return [float(value)] * 1536

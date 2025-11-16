@@ -65,3 +65,6 @@ addopts = "-q"
 testpaths = [
     "tests",
 ]
+markers = [
+    "db: tests that require a configured database connection",
+]

@@ -137,6 +137,7 @@ class FileIndexRepository(_RepositoryBase):
         ).format(columns=_FILE_COLUMNS_SQL, values=sql.SQL(", ").join(value_blocks))
 
         for record in files:
+            embedding_literal = _vector_literal(record.embedding)
             params.extend(
                 (
                     record.file_id,
@@ -144,7 +145,7 @@ class FileIndexRepository(_RepositoryBase):
                     record.file_name,
                     record.summary,
                     record.keywords,
-                    tuple(_normalize_embedding(record.embedding)),
+                    embedding_literal,
                     record.mime_type,
                     record.last_modifier,
                     record.updated_at,
@@ -173,12 +174,12 @@ class FileIndexRepository(_RepositoryBase):
         connection_mode: ConnectionMode | str | None = None,
     ) -> list[FileSearchResult]:
         mode = self._resolve_mode(connection_mode)
-        normalized_embedding = tuple(_normalize_embedding(query_embedding))
+        query_vector = _vector_literal(query_embedding)
         bounded_limit = max(1, min(limit, MAX_SEARCH_LIMIT))
 
         filters: list[str] = []
         params: dict[str, Any] = {
-            "query_embedding": normalized_embedding,
+            "query_embedding": query_vector,
             "limit": bounded_limit,
         }
         if not include_deleted:
@@ -192,7 +193,7 @@ class FileIndexRepository(_RepositoryBase):
         max_distance = _distance_threshold_from_similarity(min_similarity)
         if max_distance is not None:
             params["max_distance"] = max_distance
-            filters.append("(embedding <-> %(query_embedding)s) <= %(max_distance)s")
+            filters.append("(embedding <-> %(query_embedding)s::vector) <= %(max_distance)s")
 
         base_query = [
             "select",
@@ -205,7 +206,7 @@ class FileIndexRepository(_RepositoryBase):
             "    last_modifier,",
             "    updated_at,",
             "    deleted_at,",
-            "    embedding <-> %(query_embedding)s as distance",
+            "    embedding <-> %(query_embedding)s::vector as distance",
             "from file_index",
         ]
         if filters:
@@ -414,6 +415,16 @@ def _normalize_embedding(embedding: Sequence[float]) -> list[float]:
     if not values:
         raise ValueError("embedding must include at least one value")
     return values
+
+
+def _vector_literal(embedding: Sequence[float]) -> str:
+    normalized = _normalize_embedding(embedding)
+    formatted = ",".join(_format_vector_value(value) for value in normalized)
+    return f"[{formatted}]"
+
+
+def _format_vector_value(value: float) -> str:
+    return format(value, ".15g")
 
 
 def _distance_threshold_from_similarity(value: float | None) -> float | None:

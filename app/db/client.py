@@ -157,6 +157,7 @@ def _create_pool(mode: ConnectionMode) -> ConnectionPool:
         max_size=5,
         timeout=10,
         configure=_build_configure_callback(settings),
+        open=True,
     )
     pool.document_locator_mode = mode  # type: ignore[attr-defined]
     masked_key = _mask_secret(get_supabase_api_key(mode=mode))
@@ -188,6 +189,9 @@ def _build_pool_settings(config: AppConfig, mode: ConnectionMode) -> PoolSetting
 
 def _build_configure_callback(settings: PoolSettings) -> Callable[[Connection[Any]], None]:
     schema_sql = sql.Identifier(settings.schema)
+    extensions_schema = sql.Identifier("extensions")
+    public_schema = sql.Identifier("public")
+    search_path_sql = sql.SQL(", ").join([schema_sql, extensions_schema, public_schema])
     statement_timeout_sql = sql.Literal(settings.statement_timeout_ms)
     idle_timeout_sql = sql.Literal(settings.idle_in_transaction_timeout_ms)
 
@@ -197,7 +201,7 @@ def _build_configure_callback(settings: PoolSettings) -> Callable[[Connection[An
         if previous_autocommit is not sentinel:
             connection.autocommit = True
         try:
-            connection.execute(sql.SQL("set search_path to {}").format(schema_sql))
+            connection.execute(sql.SQL("set search_path to {}").format(search_path_sql))
             connection.execute(sql.SQL("set statement_timeout to {}").format(statement_timeout_sql))
             connection.execute(
                 sql.SQL("set idle_in_transaction_session_timeout to {}").format(idle_timeout_sql)
