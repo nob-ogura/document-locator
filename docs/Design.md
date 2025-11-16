@@ -93,7 +93,7 @@ graph TB
 - `file_index` と `crawler_state` の2テーブルを使用（要件8章）。
 - `file_index.embedding` に `pgvector` インデックス（HNSW推奨）を作成。`file_id` 主キーでUpsert可能。
 - 監査のため `updated_at`, `last_modifier` をクローラーから埋める。
-- Supabase Row Level Security はPoC段階では無効、権限制御は検索クエリ時の `file_id` フィルタで担保（NFR-SEC-01）。将来の本番化ではRLS拡張を検討。
+- Supabase Row Level Security はPoC段階では無効。
 
 ### 4.3 セマンティック検索 CLI
 - **実行形態**: `gdrive-search query "<自然言語>" --topk=5 --distance-threshold=0.5`。
@@ -152,7 +152,6 @@ graph TB
 
 ## 7. セキュリティ / 権限設計
 - **権限分離**: クローラーは管理者サービスアカウント（ドライブ横断権限）、検索CLIはユーザー本人のOAuthスコープ (`https://www.googleapis.com/auth/drive.readonly`) のみを使用。
-- **必須フィルタ (NFR-SEC-01)**: DBアクセス層に `visible_file_ids` が空の場合は検索を実行せずエラーを返すガードを設置。SQL層は必ず `WHERE file_id = ANY(:visible_ids)` を経由。
 - **資格情報管理 (NFR-SEC-02)**: すべてのキーは環境変数/秘密管理で渡し、リポジトリに含めない。OAuthトークンはOSの秘密ストア（macOS Keychain, Linux Secret Service）に保存し、権限のないユーザーには読めないようにする。
 - **監査ログ**: クローラーは処理した `file_id` のハッシュ一覧、検索CLIは実行ユーザーとクエリ長など、機微でないメタ情報のみロギング。実際のクエリ文はデバッグ時以外出力しない。
 
@@ -167,7 +166,6 @@ graph TB
 ---
 
 ## 9. テスト計画との対応
-- **権限テスト (KPI-1)**: モックユーザーA/Bのアクセストークンで検索CLIを実行し、`visible_file_ids` 集合が互いに排他になること、結果に他者専用ファイルが含まれないことを自動テスト化。
 - **差分同期テスト (FR-C-01/05)**: ローカル共有ドライブサンドボックスで作成/更新/削除を行い、クローラー実行後のDBとDrive差分を比較する統合テストを用意。
 - **検索有用性 (KPI-2)**: 代表20クエリを事前定義し、人手評価フォームを準備。検索CLIの出力をCSV化して評価容易にする。
 - **可用性/リトライ (NFR-REL-01)**: OpenAI/Drive APIのモックで 429/5xx を返却し、指数バックオフが所定回数で止まることをユニットテスト。

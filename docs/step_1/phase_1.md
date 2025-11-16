@@ -8,7 +8,7 @@ Phase 1 は Day 1-2 で永続化レイヤーを固め、クローラー/検索�
 | ---- | ----------------------------------------------- | ------------------------------------------------------------------- |
 | T1-1 | Supabase 接続モジュールと repository 設計       | 接続設定/ローテータブルな `db/repositories.py` 下層インターフェース |
 | T1-2 | 初期マイグレーション (`0001_init.sql`) の整備   | `file_index` / `crawler_state` スキーマとインデックス               |
-| T1-3 | Repository 実装 (Upsert/検索/削除/APIキー切替)  | `visible_file_ids` フィルタ必須の CRUD API                          |
+| T1-3 | Repository 実装 (Upsert/検索/削除/APIキー切替)  | CRUD API                                                            |
 | T1-4 | Repository テストと接続周辺の検証ユーティリティ | Upsert/Search/Delete のテスト、テスト用接続フィクスチャ             |
 
 ## タスク詳細
@@ -40,23 +40,20 @@ Phase 1 は Day 1-2 で永続化レイヤーを固め、クローラー/検索�
 
 ### T1-3: Repository 実装 (Upsert/検索/削除/APIキー切替)
 - **作業内容**
-  - `db/repositories.py` に `FileIndexRepository` (upsert/search/delete), `CrawlerStateRepository` (CRUD) を実装。Plan の要件通り `visible_file_ids` フィルタを全検索 API に必須引数として組み込み、欠如時は `ValueError` を発生。
+  - `db/repositories.py` に `FileIndexRepository` (upsert/search/delete), `CrawlerStateRepository` (CRUD) を実装。
   - Upsert は複数行をまとめて処理する `upsert_files(files: Sequence[FileRecord])` を提供し、`deleted_at` が `not null` の場合は論理削除扱いに統一。Plan Phase 2 の同期処理でまとめて呼べるようバルクSQLを採用。
   - 検索 API は `embedding` ベクトルとの距離計算 (`<->` 演算子) を行う SQL をラップし、`limit`, `min_similarity` を引数としてパラメトライズ。pgvector インデックスを活かすため Prepared Statement 化し、必要に応じて RPC (Supabase) 呼び出しとも親和性を持たせる。
   - 削除 API は `file_id` 単位で `deleted_at` を更新し、Plan の「削除イベント処理」と連携できるよう設計。`drive_id` での範囲削除にも対応。
   - 例外整理: DB 側エラー (`psycopg.Error`) をアプリ固有例外 (`RepositoryError`) にラップし、ログ出力フォーマット (構造化) を Phase 0 の logging モジュールに合わせる。
 - **受入基準**
   - 署名/Docstring が Phase 2/3 から利用しやすいよう型ヒントつきで提供される。
-  - `visible_file_ids` 引数を空リストで渡した場合、SQL を実行せずに空結果を返すなど、NFR-SEC-01 を満たす安全策が確認される。
   - 接続モジュールのモード切替 (`service` vs `user`) が repository 層でも透過的に利用できる (例: 引数 `connection_mode="service"` が機能)。
 
 ### T1-4: Repository テストと接続周辺の検証ユーティリティ
 - **作業内容**
   - `tests/db/test_repositories.py` を作成し、ローカル Supabase/Postgres をモックまたは test コンテナで起動して Upsert/Search/Delete を検証。`pytest` マーカーで DB テストを分類し、CI で実行できるようにする。
-  - テストデータ: 共有ドライブ/非共有ドライブを仮想的に表現する `drive_id`, `file_id` の組み合わせを用意し、`visible_file_ids` のフィルタ挙動 (見えるもののみ返す) を確認。
   - `crawler_state` リポジトリの CRUD と `start_page_token` の差分更新が想定どおり動くかをシナリオテストで検証。
   - DB 接続フィクスチャを pytest で実装 (`@pytest.fixture(scope="session")`) し、接続設定が存在しない場合は `pytest.skip` で安全にスキップ。CI では Supabase service key を渡して実行できるように GitHub Actions Secrets を設計。
 - **受入基準**
   - `pytest tests/db/test_repositories.py -k file_index` がローカルで成功し、CI でも安定実行される。
   - テストログに API キーなどの秘密情報が出力されない (NFR-SEC-02)。
-  - バグ再発防止: `visible_file_ids` を渡し忘れたケース、重複 upsert、削除済みファイルの検索など代表的な失敗パターンのテストが揃っている。

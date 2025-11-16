@@ -22,12 +22,12 @@
 - マイグレーション `app/db/migrations/0001_init.sql`:
   - `file_index(file_id PK, drive_id, file_name, summary, keywords, embedding vector(1536), mime_type, last_modifier, updated_at, deleted_at)` に pgvectorインデックス。
   - `crawler_state(drive_id PK, start_page_token, last_run_at, last_status)`。
-- repositoryテスト: Upsert/検索/削除、`visible_file_ids` フィルタの必須適用 (NFR-SEC-01)。
+- repositoryテスト: Upsert/検索/削除。
 
 ### Phase 2: クローラーCLI (`gdrive-indexer`) (Day 2-5)
 
 - **Drive検出/状態管理** (Design 4.1-1,6): `drives.list` → `crawler_state` CRUD、フル/デルタモード引数の実装。各ドライブごとの実行ループを用意。
-- **差分ポーリング (改訂版)** (4.1-2, Step 3フロー):
+- **差分ポーリング** (4.1-2, Step 3フロー):
   - Google Drive APIクライアントラッパーを実装し、`changes.getStartPageToken`, `changes.list` などの呼び出しを抽象化する。
   - **堅牢なレート制御とリトライ戦略:**
     - **HTTP `429 (Too Many Requests)`** に加え、**HTTP `403 (Forbidden)`** であり、かつレスポンスボディのエラー理由 (`reason`) が `userRateLimitExceeded` または `rateLimitExceeded` である場合を、レート制限エラーとして適切にハンドリングする。
@@ -44,7 +44,7 @@
 
 ### Phase 3: 検索CLI (`gdrive-search`) (Day 5-7)
 - **OAuth & 権限フィルタ** (Design 4.2, 7): ユーザートークン取得、macOS/Linuxの秘密ストア連携。`files.list` で閲覧可能 `file_id` を集約し、空集合時はエラー。
-- **クエリ処理** (Design 5.2 Step 1-4): クエリバリデーション、embedding生成、Supabase RPCで `topk` ベクトル検索 + `visible_file_ids` フィルタを実行。
+- **クエリ処理** (Design 5.2 Step 1-4): クエリバリデーション、embedding生成、Supabase RPCで `topk` ベクトル検索を実行。
 - **結果表示**: テキスト/JSON出力オプション、distanceとDriveリンクの表示 (Design 5.2 Step 5)。
 - **ユーザーログ**: 実行時ユーザー識別子、クエリ長のみをINFOログに記録 (Design 7)。
 - **テスト**: モックOAuthトークンでA/Bユーザーが互いに他者ファイルを取得しないことを確認 (Design 9 KPI-1)。
@@ -64,4 +64,3 @@
 ## 5. リスク緩和アクション
 - Drive APIクォータ逼迫に備え、Phase 2でAPI呼び出し数をログ出力し、閾値超過時のレートリミット設定を構成ファイル化。
 - 要約品質問題に備え、メタデータ生成ラッパーでプロンプト/トークンを設定ファイルから変更可能にし、失敗時は要約無しでも検索継続できるよう設計。
-- `visible_file_ids` が肥大する場合に備え、Phase 1で `file_index(drive_id, file_id)` の副索引を用意し、将来的なACLテーブル追加に備えたインターフェースを切る。
