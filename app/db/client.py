@@ -9,7 +9,7 @@ from contextlib import contextmanager
 from dataclasses import dataclass
 from enum import Enum
 from threading import Lock
-from typing import Any
+from typing import Any, cast
 
 from app.config import AppConfig, get_config
 
@@ -204,7 +204,7 @@ def _build_configure_callback(settings: PoolSettings) -> Callable[[Connection[An
             )
         finally:
             if previous_autocommit is not sentinel:
-                connection.autocommit = previous_autocommit
+                connection.autocommit = cast(bool, previous_autocommit)
 
     return _configure
 
