@@ -15,7 +15,7 @@ from app.config import AppConfig, get_config
 try:  # pragma: no cover - exercised in tests via monkeypatching
     from psycopg import Connection, conninfo, sql
     from psycopg.errors import Error as PsycopgError
-    from psycopg_pool import ConnectionPool  # type: ignore
+    from psycopg_pool import ConnectionPool
 except ImportError as exc:  # pragma: no cover - dependency missing at runtime
     raise RuntimeError(
         "psycopg and psycopg-pool are required. Install them with `uv add psycopg[binary]`."
@@ -154,7 +154,7 @@ def _create_pool(mode: ConnectionMode) -> ConnectionPool:
         timeout=10,
         configure=_build_configure_callback(settings),
     )
-    pool.document_locator_mode = mode
+    setattr(pool, "document_locator_mode", mode)
     masked_key = _mask_secret(get_supabase_api_key(mode=mode))
     logger.info(
         "Initialized Supabase connection pool",
