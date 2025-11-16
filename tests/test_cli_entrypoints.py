@@ -9,6 +9,7 @@ import pytest
 REQUIRED_ENV = {
     "GOOGLE_OAUTH_CLIENT_ID": "client-id",
     "GOOGLE_OAUTH_CLIENT_SECRET": "client-secret",
+    "GOOGLE_DRIVE_TARGET_FOLDER_ID": "drive-folder-id",
     "SUPABASE_URL": "https://example.supabase.co",
     "SUPABASE_SERVICE_ROLE_KEY": "service-role",
     "SUPABASE_ANON_KEY": "public-anon-key",

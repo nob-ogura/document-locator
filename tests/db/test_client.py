@@ -57,7 +57,11 @@ class DummyPoolConnection:
 
 def build_config() -> AppConfig:
     return AppConfig(
-        google=GoogleConfig(oauth_client_id="id", oauth_client_secret="secret"),
+        google=GoogleConfig(
+            oauth_client_id="id",
+            oauth_client_secret="secret",
+            target_folder_id="folder-id",
+        ),
         supabase=SupabaseConfig(
             url="https://project.supabase.co",
             service_role_key="service-role",

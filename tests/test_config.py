@@ -7,6 +7,7 @@ import pytest
 REQUIRED_KEYS = [
     "GOOGLE_OAUTH_CLIENT_ID",
     "GOOGLE_OAUTH_CLIENT_SECRET",
+    "GOOGLE_DRIVE_TARGET_FOLDER_ID",
     "SUPABASE_URL",
     "SUPABASE_SERVICE_ROLE_KEY",
     "SUPABASE_ANON_KEY",
@@ -21,6 +22,7 @@ def sample_values() -> dict[str, str]:
     return {
         "GOOGLE_OAUTH_CLIENT_ID": "client-id-from-env",
         "GOOGLE_OAUTH_CLIENT_SECRET": "client-secret",
+        "GOOGLE_DRIVE_TARGET_FOLDER_ID": "drive-folder-id",
         "SUPABASE_URL": "https://example.supabase.co",
         "SUPABASE_SERVICE_ROLE_KEY": "service-role-key",
         "SUPABASE_ANON_KEY": "public-anon-key",
@@ -52,6 +54,7 @@ def write_config_file(path: Path, *, overrides: dict[str, str]) -> Path:
                 "[google]",
                 f'oauth_client_id = "{overrides["GOOGLE_OAUTH_CLIENT_ID"]}"',
                 f'oauth_client_secret = "{overrides["GOOGLE_OAUTH_CLIENT_SECRET"]}"',
+                f'target_folder_id = "{overrides["GOOGLE_DRIVE_TARGET_FOLDER_ID"]}"',
                 "[supabase]",
                 f'url = "{overrides["SUPABASE_URL"]}"',
                 f'service_role_key = "{overrides["SUPABASE_SERVICE_ROLE_KEY"]}"',
@@ -80,6 +83,7 @@ def test_loads_values_from_env_file(tmp_path: Path) -> None:
     assert config.google.oauth_client_id == env_values["GOOGLE_OAUTH_CLIENT_ID"]
     assert config.supabase.url == env_values["SUPABASE_URL"]
     assert config.supabase.anon_key == env_values["SUPABASE_ANON_KEY"]
+    assert config.google.target_folder_id == env_values["GOOGLE_DRIVE_TARGET_FOLDER_ID"]
     assert config.database.url == env_values["DATABASE_URL"]
     assert config.database.name == env_values["DATABASE_NAME"]
     assert config.database.schema == env_values["DATABASE_SCHEMA"]
@@ -102,6 +106,7 @@ def test_config_file_overrides_env_file(tmp_path: Path) -> None:
     assert config.openai.api_key == "sk-config"
     assert config.supabase.url == "https://config.supabase.co"
     assert config.database.schema == "config_schema"
+    assert config.google.target_folder_id == overrides["GOOGLE_DRIVE_TARGET_FOLDER_ID"]
 
 
 def test_environment_variables_have_highest_priority(

@@ -1,13 +1,13 @@
 # Phase 2 タスク (クローラーCLI `gdrive-indexer`)
 
-Phase 2 は Day 2-5 に `gdrive-indexer` を完成させ、共有ドライブ差分クロール→要約/埋め込み生成→Supabase 同期までを一気通貫で動かすことがゴール。docs/Plan.md の Phase 2 項目をタスク化し、前後依存と成果物を整理する。
+Phase 2 は Day 2-5 に `gdrive-indexer` を完成させ、`.env` の `GOOGLE_DRIVE_TARGET_FOLDER_ID` で指定したフォルダを差分クロール→要約/埋め込み生成→Supabase 同期までを一気通貫で動かすことがゴール。docs/Plan.md の Phase 2 項目をタスク化し、前後依存と成果物を整理する。
 
 ## タスクリスト概要
 
 | ID   | タスク名                                      | 目的/主要成果物                                                                                  |
 | ---- | --------------------------------------------- | ------------------------------------------------------------------------------------------------ |
-| T2-1 | Drive 検出と Crawler State 制御               | `drives.list` ベースのターゲット列挙、`crawler_state` CRUD、フル/デルタ実行モードのCLI引数        |
-| T2-2 | 差分ポーリング & Drive API クライアント基盤  | `changes` API ラッパー、共有ドライブ対応フラグ、レート制御/リトライ機構                         |
+| T2-1 | ターゲットフォルダ検証と Crawler State 制御  | `GOOGLE_DRIVE_TARGET_FOLDER_ID` 解決、`crawler_state` CRUD、フル/デルタ実行モードのCLI引数       |
+| T2-2 | 差分ポーリング & Drive API クライアント基盤  | `changes` API ラッパー、ターゲットフォルダ/共有ドライブ対応フラグ、レート制御/リトライ機構      |
 | T2-3 | コンテンツ抽出パイプライン                    | MIME種別ごとの抽出実装 (Docs/Slides/Sheets/PDF 等)、失敗スキップのロギング                      |
 | T2-4 | AIメタデータ生成ラッパー                      | GPT-4o mini 呼び出し + スキーマ検証 + リトライ/フォールバック                                   |
 | T2-5 | ベクトル化とキャッシュ                        | `text-embedding-3-small` クライアント、入力整形、任意の埋め込みキャッシュ                       |
@@ -17,15 +17,15 @@ Phase 2 は Day 2-5 に `gdrive-indexer` を完成させ、共有ドライブ差
 
 ## タスク詳細
 
-### T2-1: Drive 検出と Crawler State 制御
+### T2-1: ターゲットフォルダ検証と Crawler State 制御
 - **作業内容**
-  - `gdrive-indexer` の CLI 引数に `--mode={full,delta}`, `--drive-id`, `--dry-run` 等を追加し、Phase 1 の repository/API を注入できる実行ループを実装。
-  - Google Drive API の `drives.list` (共有ドライブ) と `about.get` (マイドライブ) を使って対象ドライブを列挙し、Plan 記載の Design 4.1-1,6 に沿って `crawler_state` に初期レコードを作成/更新する。
-  - `crawler_state` が存在しないドライブは初回フルクロール、`start_page_token` がある場合はデルタクロールを選択するロジックを定義。
-  - CLI 起動時に各ドライブ単位で処理ループを回すタスクスケジューラ (同期/並列) を整備し、失敗ドライブも他へ影響しないよう try/except で分離。
+  - `gdrive-indexer` の CLI 引数に `--mode={full,delta}`, `--folder-id`, `--dry-run` 等を追加し、Phase 1 の repository/API を注入できる実行ループを実装。
+  - `.env` または CLI 引数で受け取った `GOOGLE_DRIVE_TARGET_FOLDER_ID` を `files.get` で検証し、`driveId`・フォルダ名を取得して `crawler_state` とログに記録する。
+  - `crawler_state` が存在しないフォルダは初回フルクロール、`start_page_token` がある場合はデルタクロールを選択するロジックを定義。
+  - CLI 起動時に単一フォルダの処理ループを回すタスクスケジューラを整備し、失敗しても再実行しやすいよう try/except で分離。
 - **受入基準**
-  - `gdrive-indexer --mode delta` 実行時に、未登録ドライブは自動で `crawler_state` が挿入され、ログで初期トークン取得が確認できる。
-  - `--drive-id=xxx` 指定時にそのドライブのみ処理され、CLI 終了コードが各ドライブの success/failure に準拠する。
+  - `gdrive-indexer --mode delta` 実行時に、未登録フォルダは自動で `crawler_state` が挿入され、ログでフォルダ名とドライブID、初期トークン取得が確認できる。
+  - `--folder-id=xxx` 指定時にそのフォルダのみ処理され、CLI 終了コードが対象フォルダの success/failure に準拠する。
 
 ### T2-2: 差分ポーリング & Drive API クライアント基盤
 - **作業内容**
@@ -35,7 +35,7 @@ Phase 2 は Day 2-5 に `gdrive-indexer` を完成させ、共有ドライブ差
   - API エラー時のリトライと致命的エラーの分類 (認証/権限/404) を定義し、再実行時に同じイベントから再開できるようチェックポイント (last processed change id) を保持。
 - **受入基準**
   - 単体テストで 429/403 レスポンスをシミュレートし、`Retry-After` と指数バックオフ経路が期待通りに動く。
-  - shared drive のファイルを含む changes を取得した際、`supportsAllDrives/includeItemsFromAllDrives` が必ずつくことをログまたはテストで検証できる。
+  - ターゲットフォルダ配下のファイルを含む changes を取得した際、`supportsAllDrives/includeItemsFromAllDrives` が必ず付与され、フォルダIDでフィルタされていることをログまたはテストで検証できる。
 
 ### T2-3: コンテンツ抽出パイプライン
 - **作業内容**

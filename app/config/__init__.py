@@ -17,6 +17,7 @@ CONFIG_FILE_ENV_VAR = "DOCUMENT_LOCATOR_CONFIG_FILE"
 _PATH_TO_ENV_KEY: dict[tuple[str, str], str] = {
     ("google", "oauth_client_id"): "GOOGLE_OAUTH_CLIENT_ID",
     ("google", "oauth_client_secret"): "GOOGLE_OAUTH_CLIENT_SECRET",
+    ("google", "target_folder_id"): "GOOGLE_DRIVE_TARGET_FOLDER_ID",
     ("supabase", "url"): "SUPABASE_URL",
     ("supabase", "service_role_key"): "SUPABASE_SERVICE_ROLE_KEY",
     ("supabase", "anon_key"): "SUPABASE_ANON_KEY",
@@ -40,6 +41,7 @@ class ConfigError(RuntimeError):
 class GoogleConfig:
     oauth_client_id: str
     oauth_client_secret: str
+    target_folder_id: str
 
 
 @dataclass(frozen=True)
@@ -109,6 +111,7 @@ def doctor(*, env_file: Path | str | None = None, config_file: Path | str | None
 
     print("Configuration looks good.", file=sys.stdout)
     print(f"  Google OAuth client ID: {config.google.oauth_client_id}", file=sys.stdout)
+    print(f"  Drive target folder ID: {config.google.target_folder_id}", file=sys.stdout)
     print(f"  Supabase URL: {config.supabase.url}", file=sys.stdout)
     print("  Supabase keys: service role + anon key loaded.", file=sys.stdout)
     print(f"  Database name: {config.database.name}", file=sys.stdout)
@@ -137,6 +140,7 @@ def _build_app_config(data: Mapping[str, Any]) -> AppConfig:
         google=GoogleConfig(
             oauth_client_id=values[("google", "oauth_client_id")],
             oauth_client_secret=values[("google", "oauth_client_secret")],
+            target_folder_id=values[("google", "target_folder_id")],
         ),
         supabase=SupabaseConfig(
             url=values[("supabase", "url")],
