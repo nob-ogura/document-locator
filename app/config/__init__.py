@@ -19,7 +19,10 @@ _PATH_TO_ENV_KEY: dict[tuple[str, str], str] = {
     ("google", "oauth_client_secret"): "GOOGLE_OAUTH_CLIENT_SECRET",
     ("supabase", "url"): "SUPABASE_URL",
     ("supabase", "service_role_key"): "SUPABASE_SERVICE_ROLE_KEY",
+    ("supabase", "anon_key"): "SUPABASE_ANON_KEY",
     ("database", "url"): "DATABASE_URL",
+    ("database", "name"): "DATABASE_NAME",
+    ("database", "schema"): "DATABASE_SCHEMA",
     ("openai", "api_key"): "OPENAI_API_KEY",
 }
 _ENV_KEY_TO_PATH = {env_name: path for path, env_name in _PATH_TO_ENV_KEY.items()}
@@ -43,11 +46,14 @@ class GoogleConfig:
 class SupabaseConfig:
     url: str
     service_role_key: str
+    anon_key: str
 
 
 @dataclass(frozen=True)
 class DatabaseConfig:
     url: str
+    name: str
+    schema: str
 
 
 @dataclass(frozen=True)
@@ -104,6 +110,9 @@ def doctor(*, env_file: Path | str | None = None, config_file: Path | str | None
     print("Configuration looks good.", file=sys.stdout)
     print(f"  Google OAuth client ID: {config.google.oauth_client_id}", file=sys.stdout)
     print(f"  Supabase URL: {config.supabase.url}", file=sys.stdout)
+    print("  Supabase keys: service role + anon key loaded.", file=sys.stdout)
+    print(f"  Database name: {config.database.name}", file=sys.stdout)
+    print(f"  Database schema: {config.database.schema}", file=sys.stdout)
     print("  Secrets are loaded from secure sources.", file=sys.stdout)
     return True
 
@@ -132,8 +141,13 @@ def _build_app_config(data: Mapping[str, Any]) -> AppConfig:
         supabase=SupabaseConfig(
             url=values[("supabase", "url")],
             service_role_key=values[("supabase", "service_role_key")],
+            anon_key=values[("supabase", "anon_key")],
         ),
-        database=DatabaseConfig(url=values[("database", "url")]),
+        database=DatabaseConfig(
+            url=values[("database", "url")],
+            name=values[("database", "name")],
+            schema=values[("database", "schema")],
+        ),
         openai=OpenAIConfig(api_key=values[("openai", "api_key")]),
     )
 

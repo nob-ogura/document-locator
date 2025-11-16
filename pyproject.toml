@@ -6,7 +6,10 @@ readme = "README.md"
 requires-python = ">=3.13"
 license = {text = "Proprietary"}
 authors = [{ name = "document-locator developers" }]
-dependencies = []
+dependencies = [
+    "psycopg[binary]>=3.2",
+    "psycopg-pool>=3.2",
+]
 
 [project.scripts]
 gdrive-indexer = "app.cli.indexer:main"

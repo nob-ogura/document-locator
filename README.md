@@ -39,8 +39,8 @@
 | `GOOGLE_APPLICATION_CREDENTIALS`                       | Google Cloud のサービスアカウント JSON           | gdrive-indexer (共有ドライブ巡回) で Drive API を呼び出すためのサービスアカウント資格情報                   |
 | `GOOGLE_OAUTH_CLIENT_ID`, `GOOGLE_OAUTH_CLIENT_SECRET` | Google Cloud の OAuth 2.0 クライアント           | gdrive-search でユーザー本人の Drive 権限を取得するためのOAuthクライアント設定                              |
 | `OPENAI_API_KEY`                                       | OpenAI アカウント                                | GPT-4o mini と text-embedding-3-small を叩くための API キー                                                 |
-| `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`            | Supabase プロジェクト Settings > API             | Supabase/PostgreSQL への HTTP 経由アクセス。サービスロールはインデックス更新で Upsert/Delete を行う際に使用 |
-| `DATABASE_URL` (任意)                                  | Supabase Settings > Database > Connection string | 直接 PostgreSQL に接続する CLI/テストで利用する接続文字列                                                   |
+| `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, `SUPABASE_ANON_KEY` | Supabase プロジェクト Settings > API             | Supabase/PostgreSQL への HTTP 経由アクセス。サービスロールはインデックス更新で Upsert/Delete を行い、Anon key はユーザー向け RLS アクセスで使用 |
+| `DATABASE_URL`, `DATABASE_NAME`, `DATABASE_SCHEMA`     | Supabase Settings > Database > Connection string | 直接 PostgreSQL に接続する CLI/テストで利用する接続文字列と、アプリ用データベース/スキーマ (例: `document_locator_app`) |
 
 ### 1. Google Drive クローラー用サービスアカウント (`GOOGLE_APPLICATION_CREDENTIALS`)
 1. [Google Cloud Console](https://console.cloud.google.com/) で専用プロジェクトを作成し、**Drive API** (必要に応じて **Admin SDK**) を有効化します。
@@ -64,10 +64,10 @@
    GOOGLE_OAUTH_CLIENT_SECRET=xxxxxxxxxxxxxx
    ```
 
-### 3. Supabase 接続情報 (`SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, `DATABASE_URL`)
+### 3. Supabase 接続情報 (`SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, `SUPABASE_ANON_KEY`, `DATABASE_URL`, `DATABASE_NAME`, `DATABASE_SCHEMA`)
 1. [Supabase](https://supabase.com/) で新規プロジェクトを作成し、PostgreSQL パスワードとリージョンを決定します。プロジェクト作成後、Database > Extensions から **pgvector** を有効化してください。
-2. Settings > API で **Project URL** (`https://<ref>.supabase.co`) と **service_role key** を取得します。Project URL を `SUPABASE_URL`、Service Role Key を `SUPABASE_SERVICE_ROLE_KEY` として `.env` に記載します。
-3. Supabase の `Settings > Database > Connection string` から `DATABASE_URL` をコピーし、CLI やスクリプトが直接 PostgreSQL に接続できるようにします（例: `postgresql://postgres:<password>@db.<ref>.supabase.co:6543/postgres`）。
+2. Settings > API で **Project URL** (`https://<ref>.supabase.co`)、**service_role key**、**anon/public key** を取得します。Project URL を `SUPABASE_URL`、Service Role Key を `SUPABASE_SERVICE_ROLE_KEY`、Anon key を `SUPABASE_ANON_KEY` として `.env`/.toml に記載します。
+3. Supabase の `Settings > Database > Connection string` から `DATABASE_URL` をコピーし、CLI やスクリプトが直接 PostgreSQL に接続できるようにします（例: `postgresql://postgres:<password>@db.<ref>.supabase.co:6543/postgres`）。同時に Phase 1 で利用する論理データベース名 (`DATABASE_NAME=document_locator`) とアプリ用スキーマ (`DATABASE_SCHEMA=document_locator_app`) も決めておきます。
 4. 取得したキーはローカルだけに保存し、Git には絶対に含めないようにしてください。必要に応じて Supabase 側で IP 制限やパスワードのローテーションを設定します。
 
 ### 4. OpenAI API キー (`OPENAI_API_KEY`)
@@ -79,3 +79,13 @@
 1. `.env.sample` が追加されたら `cp .env.sample .env` を実行し、上記で取得した値を `.env` に転記します。JSON ファイル（サービスアカウント鍵）はパスのみ記載し、ファイル自体は `.gitignore` された場所に置きます。
 2. Phase 0 で実装予定の `python -m app.config doctor` コマンドが完成したら、`.env` の検証に使用してください。欠けている変数やファイルのパスミスが早期に検出できます。
 3. これらのシークレットを共有する場合は、パスワードマネージャーや Vault を通じて共有し、チャットやメールに直接貼り付けないようにします。
+
+## Supabase 接続モジュール
+Phase 1 で追加された `app/db/client.py` は psycopg のコネクションプールをラップし、サービスロールキーと Anon/User API キーをモードで切り替えます。CLI からは次のように動作確認できます。
+
+```bash
+python -m app.db.client doctor --mode service  # サービスロール (Upsert/Delete 用)
+python -m app.db.client doctor --mode user     # Anon/User キー (RLS 適用検索用)
+```
+
+リポジトリ層やテストでは `from app.db.client import get_connection` を使うことで、`with get_connection(mode="service") as conn:` のように安全に Supabase/PostgreSQL に接続できます。モードを切り替えるだけで RLS 想定のユーザーモードに切り替えられるため、後続の Phase 2/3 でも追加設定なく再利用できます。
