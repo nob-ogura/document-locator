@@ -67,7 +67,13 @@
 ### 3. Supabase 接続情報 (`SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, `SUPABASE_ANON_KEY`, `DATABASE_URL`, `DATABASE_NAME`, `DATABASE_SCHEMA`)
 1. [Supabase](https://supabase.com/) で新規プロジェクトを作成し、PostgreSQL パスワードとリージョンを決定します。プロジェクト作成後、Database > Extensions から **pgvector** を有効化してください。
 2. Settings > API で **Project URL** (`https://<ref>.supabase.co`)、**service_role key**、**anon/public key** を取得します。Project URL を `SUPABASE_URL`、Service Role Key を `SUPABASE_SERVICE_ROLE_KEY`、Anon key を `SUPABASE_ANON_KEY` として `.env`/.toml に記載します。
-3. Supabase の `Settings > Database > Connection string` から `DATABASE_URL` をコピーし、CLI やスクリプトが直接 PostgreSQL に接続できるようにします（例: `postgresql://postgres:<password>@db.<ref>.supabase.co:6543/postgres`）。同時に Phase 1 で利用する論理データベース名 (`DATABASE_NAME=document_locator`) とアプリ用スキーマ (`DATABASE_SCHEMA=document_locator_app`) も決めておきます。
+3. Supabase の `Settings > Database > Connection string` から `DATABASE_URL` をコピーし、CLI やスクリプトが直接 PostgreSQL に接続できるようにします（例: `postgresql://postgres:<password>@db.<ref>.supabase.co:6543/postgres`）。同時に Phase 1 で利用する論理データベース名 (`DATABASE_NAME=document_locator`) とアプリ用スキーマ (`DATABASE_SCHEMA=document_locator_app`) も決めておきます。Supabase プロジェクトはデフォルトで `postgres` データベースしか持たないため、推奨名で運用する場合は自分で論理 DB/スキーマを 1 度だけ作成する必要があります。接続文字列の DB（通常は `postgres`）に psql/pgcli などで接続し、以下を実行してください。
+   ```sql
+   create database document_locator;
+   \c document_locator
+   create schema document_locator_app authorization current_user;
+   ```
+   Supabase の SQL Editor で実行しても構いません。`DATABASE_NAME` を `postgres` にしておけば追加作業は不要ですが、このプロジェクトの移植性を考えると専用 DB/スキーマを作成しておくことを推奨します。
 4. 取得したキーはローカルだけに保存し、Git には絶対に含めないようにしてください。必要に応じて Supabase 側で IP 制限やパスワードのローテーションを設定します。
 
 ### 4. OpenAI API キー (`OPENAI_API_KEY`)
