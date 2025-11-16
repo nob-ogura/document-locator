@@ -11,7 +11,10 @@ REQUIRED_ENV = {
     "GOOGLE_OAUTH_CLIENT_SECRET": "client-secret",
     "SUPABASE_URL": "https://example.supabase.co",
     "SUPABASE_SERVICE_ROLE_KEY": "service-role",
+    "SUPABASE_ANON_KEY": "public-anon-key",
     "DATABASE_URL": "postgresql://postgres:password@example.supabase.co:5432/postgres",
+    "DATABASE_NAME": "document_locator",
+    "DATABASE_SCHEMA": "document_locator_app",
     "OPENAI_API_KEY": "sk-test",
 }
 

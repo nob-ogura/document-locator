@@ -154,7 +154,7 @@ def _create_pool(mode: ConnectionMode) -> ConnectionPool:
         timeout=10,
         configure=_build_configure_callback(settings),
     )
-    setattr(pool, "document_locator_mode", mode)
+    pool.document_locator_mode = mode  # type: ignore[attr-defined]
     masked_key = _mask_secret(get_supabase_api_key(mode=mode))
     logger.info(
         "Initialized Supabase connection pool",
