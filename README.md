@@ -95,3 +95,23 @@ python -m app.db.client doctor --mode user     # Anon/User キー (RLS 適用検
 ```
 
 リポジトリ層やテストでは `from app.db.client import get_connection` を使うことで、`with get_connection(mode="service") as conn:` のように安全に Supabase/PostgreSQL に接続できます。モードを切り替えるだけで RLS 想定のユーザーモードに切り替えられるため、後続の Phase 2/3 でも追加設定なく再利用できます。
+
+## Database schema & migrations
+Phase 1 の初期マイグレーションは `app/db/migrations/0001_init.sql` に格納され、`scripts/migrate.py` から適用します。`DATABASE_URL`/`DATABASE_NAME`/`DATABASE_SCHEMA` を `.env` に設定したあと、以下を実行してください。
+
+```bash
+# 進捗確認
+uv run scripts/migrate.py status
+
+# 適用（dry-run で差分だけ確認することも可能）
+uv run scripts/migrate.py up --dry-run
+uv run scripts/migrate.py up
+```
+
+スクリプトは指定スキーマの存在確認と `schema_migrations` メタテーブル作成を自動で行い、`vector` 拡張（`extensions` スキーマ）を有効化した上で SQL を適用します。すべてのステートメントを `if not exists` で記述しているため、`uv run scripts/migrate.py up` を複数回実行しても差分は発生しません。
+
+### 定義済みテーブル
+- `file_index`: Drive ファイルの検索対象メタデータと `vector(1536)` の埋め込みを保持します。`file_id` が主キーで、`drive_id`, `file_name`, `summary`, `keywords`, `mime_type`, `last_modifier`, `updated_at`, `deleted_at` を備えています。`idx_file_index_drive_file` (`drive_id`,`file_id`) による ACL 連携用の副索引と、`deleted_at is null` 条件付きインデックス、`updated_at` ソート用インデックス、`embedding` カラムの `ivfflat` ハイブリッドインデックス（`lists=100`、必要に応じて調整）を持ちます。
+- `crawler_state`: 共有ドライブ単位のクローラ状態（`drive_id` PK, `start_page_token`, `last_run_at`, `last_status`, `updated_at`）を記録し、差分クロールのリジュームに利用します。
+
+`0001_init.sql` には将来の ACL テーブル連携を想定したコメントも含めてあるため、psql で `\d+ <table>` を実行すると目的が確認できます。
