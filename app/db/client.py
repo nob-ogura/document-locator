@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import atexit
 import logging
 import sys
 from collections.abc import Callable, Iterator
@@ -93,6 +94,9 @@ def reset_pools() -> None:
         _POOLS.clear()
 
 
+atexit.register(reset_pools)
+
+
 def doctor(*, mode: ConnectionMode | str = ConnectionMode.SERVICE) -> bool:
     """Run a `select 1` to verify the Supabase connection for the given mode."""
 
@@ -183,16 +187,24 @@ def _build_pool_settings(config: AppConfig, mode: ConnectionMode) -> PoolSetting
 
 
 def _build_configure_callback(settings: PoolSettings) -> Callable[[Connection[Any]], None]:
+    schema_sql = sql.Identifier(settings.schema)
+    statement_timeout_sql = sql.Literal(settings.statement_timeout_ms)
+    idle_timeout_sql = sql.Literal(settings.idle_in_transaction_timeout_ms)
+
     def _configure(connection: Connection[Any]) -> None:
-        connection.execute(sql.SQL("set search_path to {}").format(sql.Identifier(settings.schema)))
-        connection.execute(
-            "set statement_timeout to %s",
-            (str(settings.statement_timeout_ms),),
-        )
-        connection.execute(
-            "set idle_in_transaction_session_timeout to %s",
-            (str(settings.idle_in_transaction_timeout_ms),),
-        )
+        sentinel = object()
+        previous_autocommit = getattr(connection, "autocommit", sentinel)
+        if previous_autocommit is not sentinel:
+            connection.autocommit = True
+        try:
+            connection.execute(sql.SQL("set search_path to {}").format(schema_sql))
+            connection.execute(sql.SQL("set statement_timeout to {}").format(statement_timeout_sql))
+            connection.execute(
+                sql.SQL("set idle_in_transaction_session_timeout to {}").format(idle_timeout_sql)
+            )
+        finally:
+            if previous_autocommit is not sentinel:
+                connection.autocommit = previous_autocommit
 
     return _configure
 
