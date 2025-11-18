@@ -8,9 +8,11 @@
   },
   "scripts": {
     "build": "tsc",
-    "test": "npm run build && node --test"
+    "test": "npm run build && node --test",
+    "verify:supabase-files-upsert": "npm run build && node dist/scripts/verify-supabase-files-upsert.js"
   },
   "dependencies": {
+    "@supabase/supabase-js": "^2.81.1",
     "commander": "^11.1.0"
   },
   "devDependencies": {
