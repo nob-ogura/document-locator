@@ -3,6 +3,7 @@ declare const process: any;
 import { Command } from 'commander';
 import { loadEnv, validateRequiredEnv } from './env';
 import { getLogger } from './logger';
+import { getSupabaseClient } from './supabase';
 
 export function buildCli(): Command {
   const program = new Command();
@@ -18,6 +19,7 @@ export function buildCli(): Command {
     .description('Crawl target sources (e.g. Google Drive) and index documents')
     .action(() => {
       logger.debug('Starting crawl command');
+      getSupabaseClient();
       logger.info('Crawl command executed');
     });
 
@@ -26,6 +28,7 @@ export function buildCli(): Command {
     .description('Search indexed documents using semantic search')
     .action(() => {
       logger.debug('Starting search command');
+      getSupabaseClient();
       logger.info('Search command executed');
     });
 
