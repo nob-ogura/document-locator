@@ -3,7 +3,7 @@ declare const process: any;
 import { Command } from 'commander';
 import { loadEnv, validateRequiredEnv } from './env';
 import { getLogger } from './logger';
-import { getSupabaseClient } from './supabase';
+import { getSupabaseClient, SupabaseConnectionError } from './supabase';
 
 export function buildCli(): Command {
   const program = new Command();
@@ -52,5 +52,36 @@ export function runCli(argv: string[]): void {
   validateRequiredEnv();
 
   const program = buildCli();
-  program.parse(argv);
+  try {
+    program.parse(argv);
+  } catch (error: any) {
+    const logger = getLogger();
+
+    if (error instanceof SupabaseConnectionError) {
+      const reason =
+        typeof error.message === 'string' && error.message.length > 0
+          ? error.message
+          : '不明な理由';
+
+      logger.error(`Supabase 接続エラー: ${reason}`);
+
+      // ユーザー向けには、接続に失敗したことと概要のみを標準エラー出力に表示する。
+      // eslint-disable-next-line no-console
+      console.error(`Supabase への接続に失敗しました: ${reason}`);
+    } else {
+      const message =
+        error && typeof error.message === 'string'
+          ? error.message
+          : String(error);
+
+      logger.error(`予期しないエラーが発生しました: ${message}`);
+
+      // eslint-disable-next-line no-console
+      console.error(
+        '予期しないエラーが発生しました。詳細はログを確認してください。'
+      );
+    }
+
+    process.exit(1);
+  }
 }
