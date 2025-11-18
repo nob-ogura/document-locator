@@ -1,19 +1,26 @@
 const test = require('node:test');
 const assert = require('node:assert');
-const path = require('node:path');
 const fs = require('node:fs');
+const path = require('node:path');
 const { spawn } = require('node:child_process');
 
-test('document-locator --help shows crawl and search subcommands', async () => {
+test('CLI fails to start when required env variables are missing', async () => {
   const projectRoot = path.resolve(__dirname, '..');
   const binPath = path.resolve(projectRoot, 'bin', 'document-locator');
-  const envPath = path.resolve(projectRoot, '.env.cli-help');
+  const envPath = path.resolve(projectRoot, '.env.cli-env-validation');
 
   const originalEnvContent = fs.existsSync(envPath)
     ? fs.readFileSync(envPath, 'utf8')
     : null;
 
-  const content = ['GOOGLE_DRIVE_TARGET_FOLDER_ID=folder1'].join('\n');
+  // `.env` に GOOGLE_DRIVE_TARGET_FOLDER_ID を定義しない
+  const content = [
+    '# Missing GOOGLE_DRIVE_TARGET_FOLDER_ID on purpose',
+    'LLM_API_KEY=dummy-llm-key',
+    'SUPABASE_URL=https://example.supabase.co',
+    'SUPABASE_ANON_KEY=dummy-supabase-key',
+    'GDRIVE_MCP_SERVER_URL=https://gdrive.example',
+  ].join('\n');
 
   fs.writeFileSync(envPath, content);
 
@@ -24,17 +31,12 @@ test('document-locator --help shows crawl and search subcommands', async () => {
       // CLI に使用する .env のパスを指定する
       childEnv.DOCUMENT_LOCATOR_ENV_PATH = envPath;
 
-      const child = spawn('node', [binPath, '--help'], {
+      const child = spawn('node', [binPath, 'crawl'], {
         cwd: projectRoot,
         env: childEnv,
       });
 
-      let stdout = '';
       let stderr = '';
-
-      child.stdout.on('data', (data) => {
-        stdout += data.toString();
-      });
 
       child.stderr.on('data', (data) => {
         stderr += data.toString();
@@ -42,23 +44,17 @@ test('document-locator --help shows crawl and search subcommands', async () => {
 
       child.on('close', (code) => {
         try {
-          assert.strictEqual(
+          assert.notStrictEqual(
             code,
             0,
-            `expected exit code 0, got ${code}, stderr: ${stderr}`
+            `expected non-zero exit code when required env vars are missing, got ${code}`
           );
           assert.ok(
-            stdout.toLowerCase().includes('crawl'),
-            'help output should mention "crawl" subcommand'
-          );
-          assert.ok(
-            stdout.toLowerCase().includes('search'),
-            'help output should mention "search" subcommand'
+            stderr.includes('必須の環境変数が不足しています'),
+            'stderr should contain missing env error message'
           );
           resolve();
         } catch (error) {
-          // Attach captured output for easier debugging
-          error.stdout = stdout;
           error.stderr = stderr;
           reject(error);
         }

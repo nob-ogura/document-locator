@@ -7,7 +7,7 @@ const { spawn } = require('node:child_process');
 test('CLI starts when required env variables are defined in .env', async () => {
   const projectRoot = path.resolve(__dirname, '..');
   const binPath = path.resolve(projectRoot, 'bin', 'document-locator');
-  const envPath = path.resolve(projectRoot, '.env');
+  const envPath = path.resolve(projectRoot, '.env.cli-env-loader');
 
   const originalEnvContent = fs.existsSync(envPath)
     ? fs.readFileSync(envPath, 'utf8')
@@ -25,8 +25,15 @@ test('CLI starts when required env variables are defined in .env', async () => {
 
   try {
     await new Promise((resolve, reject) => {
+      const childEnv = { ...process.env };
+      delete childEnv.GOOGLE_DRIVE_TARGET_FOLDER_ID;
+      delete childEnv['GOOGLE_DRIVE_TARGET_FOLDER_ID'];
+       // CLI に使用する .env のパスを指定する
+      childEnv.DOCUMENT_LOCATOR_ENV_PATH = envPath;
+
       const child = spawn('node', [binPath, 'crawl'], {
         cwd: projectRoot,
+        env: childEnv,
       });
 
       let stderr = '';
@@ -61,4 +68,3 @@ test('CLI starts when required env variables are defined in .env', async () => {
     }
   }
 });
-
