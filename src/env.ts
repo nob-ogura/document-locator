@@ -3,6 +3,7 @@ declare const process: any;
 
 const fs = require('node:fs');
 const path = require('node:path');
+import { getLogger } from './logger';
 
 export type EnvMap = Record<string, string>;
 
@@ -109,12 +110,9 @@ export function validateRequiredEnv(env: {
   const folderIds = getGoogleDriveTargetFolderIds(env);
 
   if (folderIds.length === 0) {
-    // ロガーは T5 以降で導入予定のため、現時点では直接 stderr に出力する。
-    // T5 実装時に ERROR レベルのログ出力に差し替える。
-    // eslint-disable-next-line no-console
-    console.error('必須の環境変数が不足しています');
-    // 非 0 ステータスでプロセスを終了させる。
-    // ロガー導入後は ERROR レベルのログ出力に置き換える。
+    // 必須環境変数が不足している場合は ERROR レベルでログを出力し、プロセスを終了する。
+    const logger = getLogger();
+    logger.error('必須の環境変数が不足しています');
     process.exit(1);
   }
 }

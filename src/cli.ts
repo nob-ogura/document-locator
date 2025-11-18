@@ -2,9 +2,11 @@ declare const process: any;
 
 import { Command } from 'commander';
 import { loadEnv, validateRequiredEnv } from './env';
+import { getLogger } from './logger';
 
 export function buildCli(): Command {
   const program = new Command();
+  const logger = getLogger();
 
   program
     .name('document-locator')
@@ -13,11 +15,19 @@ export function buildCli(): Command {
 
   program
     .command('crawl')
-    .description('Crawl target sources (e.g. Google Drive) and index documents');
+    .description('Crawl target sources (e.g. Google Drive) and index documents')
+    .action(() => {
+      logger.debug('Starting crawl command');
+      logger.info('Crawl command executed');
+    });
 
   program
     .command('search')
-    .description('Search indexed documents using semantic search');
+    .description('Search indexed documents using semantic search')
+    .action(() => {
+      logger.debug('Starting search command');
+      logger.info('Search command executed');
+    });
 
   return program;
 }
