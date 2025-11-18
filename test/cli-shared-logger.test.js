@@ -4,7 +4,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const { spawn } = require('node:child_process');
 
-test('crawl and search CLI use shared logger format', async () => {
+test('crawl と search CLI が共通のロガーフォーマットを使用する', async () => {
   const projectRoot = path.resolve(__dirname, '..');
   const binPath = path.resolve(projectRoot, 'bin', 'document-locator');
   const envPath = path.resolve(projectRoot, '.env.cli-shared-logger');
@@ -140,4 +140,3 @@ test('crawl and search CLI use shared logger format', async () => {
     }
   }
 });
-

@@ -4,7 +4,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const { spawn } = require('node:child_process');
 
-test('CLI starts when required env variables are defined in .env', async () => {
+test('.env に必須の環境変数が定義されているときに CLI が起動する', async () => {
   const projectRoot = path.resolve(__dirname, '..');
   const binPath = path.resolve(projectRoot, 'bin', 'document-locator');
   const envPath = path.resolve(projectRoot, '.env.cli-env-loader');

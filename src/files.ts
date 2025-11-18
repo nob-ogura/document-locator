@@ -19,9 +19,18 @@ export interface FileMetadata {
    * Supabase の `files.embedding` に対応するベクトル。
    */
   embedding: number[];
+  /**
+   * Supabase の `files.is_deleted` に対応する削除フラグ。
+   * 未指定の場合は false (未削除) として扱う。
+   */
+  isDeleted?: boolean;
 }
 
 export interface FileRecord extends FileMetadata {
+  /**
+   * Supabase の `files.is_deleted` に相当する削除フラグ。
+   */
+  isDeleted: boolean;
   /**
    * Supabase の `files.created_at` に相当する作成日時。
    */
@@ -41,6 +50,7 @@ export interface FileRecord extends FileMetadata {
 export interface FilesRepository {
   upsert(metadata: FileMetadata): Promise<FileRecord>;
   findByFileId(fileId: string): Promise<FileRecord | null>;
+  markAsDeleted(fileId: string): Promise<FileRecord>;
 }
 
 /**
@@ -58,6 +68,10 @@ export class InMemoryFilesRepository implements FilesRepository {
       const updated: FileRecord = {
         ...existing,
         ...metadata,
+        isDeleted:
+          metadata.isDeleted !== undefined
+            ? metadata.isDeleted
+            : existing.isDeleted,
         createdAt: existing.createdAt,
         updatedAt: now,
       };
@@ -68,6 +82,7 @@ export class InMemoryFilesRepository implements FilesRepository {
 
     const created: FileRecord = {
       ...metadata,
+      isDeleted: metadata.isDeleted ?? false,
       createdAt: now,
       updatedAt: now,
     };
@@ -79,6 +94,25 @@ export class InMemoryFilesRepository implements FilesRepository {
   async findByFileId(fileId: string): Promise<FileRecord | null> {
     const record = this.records.get(fileId);
     return record ?? null;
+  }
+
+  async markAsDeleted(fileId: string): Promise<FileRecord> {
+    const existing = this.records.get(fileId);
+
+    if (!existing) {
+      throw new Error(`File not found for logical delete: ${fileId}`);
+    }
+
+    const now = new Date();
+
+    const updated: FileRecord = {
+      ...existing,
+      isDeleted: true,
+      updatedAt: now,
+    };
+
+    this.records.set(fileId, updated);
+    return updated;
   }
 
   /**
@@ -106,5 +140,30 @@ export async function upsertFileRecord(
   metadata: FileMetadata
 ): Promise<FileRecord> {
   return repository.upsert(metadata);
+}
+
+/**
+ * Drive 側で削除されたファイルに対して、
+ * 論理削除フラグ (isDeleted) を付与するための関数。
+ *
+ * T5 の受入基準に対応するエントリーポイント。
+ */
+export async function markFileAsDeleted(
+  repository: FilesRepository,
+  fileId: string
+): Promise<FileRecord> {
+  return repository.markAsDeleted(fileId);
+}
+
+/**
+ * ベクトル検索の対象から削除フラグが true のレコードを除外するためのフィルタ関数。
+ *
+ * T5 の「ベクトル検索の対象から削除フラグが true のレコードが除外される」
+ * という受入基準をコードとして表現する。
+ */
+export function filterActiveFilesForVectorSearch(
+  records: FileRecord[]
+): FileRecord[] {
+  return records.filter((record) => !record.isDeleted);
 }
 

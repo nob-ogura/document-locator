@@ -4,7 +4,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const { spawn } = require('node:child_process');
 
-test('DEBUG logs are suppressed when LOG_LEVEL=info', async () => {
+test('LOG_LEVEL=info のときに DEBUG ログが抑制される', async () => {
   const projectRoot = path.resolve(__dirname, '..');
   const binPath = path.resolve(projectRoot, 'bin', 'document-locator');
   const envPath = path.resolve(projectRoot, '.env.cli-logging-info');
@@ -82,7 +82,7 @@ test('DEBUG logs are suppressed when LOG_LEVEL=info', async () => {
   }
 });
 
-test('ERROR logs are written to stderr with timestamp, level and message', async () => {
+test('ERROR ログがタイムスタンプ・レベル・メッセージ付きで stderr に出力される', async () => {
   const projectRoot = path.resolve(__dirname, '..');
   const binPath = path.resolve(projectRoot, 'bin', 'document-locator');
   const envPath = path.resolve(projectRoot, '.env.cli-logging-error');
@@ -158,4 +158,3 @@ test('ERROR logs are written to stderr with timestamp, level and message', async
     }
   }
 });
-

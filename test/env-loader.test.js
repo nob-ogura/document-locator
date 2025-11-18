@@ -3,7 +3,7 @@ const assert = require('node:assert');
 const fs = require('node:fs');
 const path = require('node:path');
 
-test('loadEnv loads values from a .env file and populates process.env', () => {
+test('loadEnv が .env ファイルから値を読み込み process.env を設定する', () => {
   const projectRoot = path.resolve(__dirname, '..');
   const envModulePath = path.resolve(projectRoot, 'dist', 'env.js');
 
@@ -58,7 +58,7 @@ test('loadEnv loads values from a .env file and populates process.env', () => {
   }
 });
 
-test('getGoogleDriveTargetFolderIds splits comma-separated IDs', () => {
+test('getGoogleDriveTargetFolderIds がカンマ区切りの ID を分割する', () => {
   const projectRoot = path.resolve(__dirname, '..');
   const envModulePath = path.resolve(projectRoot, 'dist', 'env.js');
 
@@ -72,7 +72,7 @@ test('getGoogleDriveTargetFolderIds splits comma-separated IDs', () => {
   assert.deepStrictEqual(ids, ['folderA', 'folderB', 'folderC']);
 });
 
-test('getGoogleDriveTargetFolderIds returns an empty array when env is missing', () => {
+test('getGoogleDriveTargetFolderIds が環境変数が存在しない場合に空配列を返す', () => {
   const projectRoot = path.resolve(__dirname, '..');
   const envModulePath = path.resolve(projectRoot, 'dist', 'env.js');
 
@@ -83,4 +83,3 @@ test('getGoogleDriveTargetFolderIds returns an empty array when env is missing',
 
   assert.deepStrictEqual(ids, []);
 });
-

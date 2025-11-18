@@ -4,7 +4,7 @@ const path = require('node:path');
 const fs = require('node:fs');
 const { spawn } = require('node:child_process');
 
-test('document-locator --help shows crawl and search subcommands', async () => {
+test('document-locator --help が crawl と search のサブコマンドを表示する', async () => {
   const projectRoot = path.resolve(__dirname, '..');
   const binPath = path.resolve(projectRoot, 'bin', 'document-locator');
   const envPath = path.resolve(projectRoot, '.env.cli-help');

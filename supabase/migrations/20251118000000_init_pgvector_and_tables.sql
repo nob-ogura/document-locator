@@ -8,6 +8,7 @@ create table if not exists files (
   summary text,
   keywords text,
   embedding vector(1536) not null,
+  is_deleted boolean not null default false,
   updated_at timestamptz not null default timezone('utc', now()),
   created_at timestamptz not null default timezone('utc', now())
 );

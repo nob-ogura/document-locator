@@ -4,7 +4,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const { spawn } = require('node:child_process');
 
-test('CLI fails to start when required env variables are missing', async () => {
+test('必須の環境変数が不足しているときに CLI が起動に失敗する', async () => {
   const projectRoot = path.resolve(__dirname, '..');
   const binPath = path.resolve(projectRoot, 'bin', 'document-locator');
   const envPath = path.resolve(projectRoot, '.env.cli-env-validation');

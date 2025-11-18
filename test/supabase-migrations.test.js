@@ -3,7 +3,7 @@ const assert = require('node:assert');
 const fs = require('node:fs');
 const path = require('node:path');
 
-test('Supabase migrations enable pgvector and create required tables', () => {
+test('Supabase のマイグレーションで pgvector が有効化され、必要なテーブルが作成される', () => {
   const projectRoot = path.resolve(__dirname, '..');
   const migrationsDir = path.resolve(projectRoot, 'supabase', 'migrations');
 
@@ -42,6 +42,7 @@ test('Supabase migrations enable pgvector and create required tables', () => {
     'summary',
     'keywords',
     'embedding',
+    'is_deleted',
     'updated_at',
     'created_at',
   ];
@@ -63,4 +64,3 @@ test('Supabase migrations enable pgvector and create required tables', () => {
     '`crawler_state` table should contain a column to store Start Page Token (e.g. start_page_token)'
   );
 });
-

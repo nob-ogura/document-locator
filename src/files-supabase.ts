@@ -25,6 +25,7 @@ function mapRowToFileRecord(row: any): FileRecord {
     summary: row.summary ?? undefined,
     keywords: row.keywords ?? undefined,
     embedding: row.embedding ?? [],
+    isDeleted: row.is_deleted ?? false,
     createdAt: new Date(row.created_at),
     updatedAt: new Date(row.updated_at),
   };
@@ -67,6 +68,7 @@ export class SupabaseFilesRepository implements FilesRepository {
           summary: metadata.summary ?? null,
           keywords: metadata.keywords ?? null,
           embedding: metadata.embedding,
+          is_deleted: metadata.isDeleted ?? false,
         },
         { onConflict: 'file_id' }
       )
@@ -113,6 +115,25 @@ export class SupabaseFilesRepository implements FilesRepository {
     }
 
     return mapRowToFileRecord(data);
+  }
+
+  async markAsDeleted(fileId: string): Promise<FileRecord> {
+    const existing = await this.findByFileId(fileId);
+
+    if (!existing) {
+      throw new Error(`File not found for logical delete: ${fileId}`);
+    }
+
+    const metadata: FileMetadata = {
+      fileId: existing.fileId,
+      fileName: existing.fileName,
+      summary: existing.summary,
+      keywords: existing.keywords,
+      embedding: existing.embedding,
+      isDeleted: true,
+    };
+
+    return this.upsert(metadata);
   }
 }
 

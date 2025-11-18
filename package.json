@@ -9,7 +9,10 @@
   "scripts": {
     "build": "tsc",
     "test": "npm run build && node --test",
-    "verify:supabase-files-upsert": "npm run build && node dist/scripts/verify-supabase-files-upsert.js"
+    "verify:supabase-files-upsert":
+      "npm run build && node dist/scripts/verify-supabase-files-upsert.js",
+    "verify:supabase-files-logical-delete":
+      "npm run build && node dist/scripts/verify-supabase-files-logical-delete.js"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.81.1",
