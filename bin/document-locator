@@ -1,0 +1,35 @@
+#!/usr/bin/env node
+
+const path = require('node:path');
+
+function printHelp() {
+  const cmd = path.basename(process.argv[1]) || 'document-locator';
+
+  console.log('document-locator - Document locator CLI');
+  console.log('');
+  console.log(`Usage: ${cmd} <command> [options]`);
+  console.log('');
+  console.log('Commands:');
+  console.log('  crawl   Crawl documents from Google Drive');
+  console.log('  search  Search documents by semantic similarity');
+}
+
+function main(argv) {
+  if (argv.length === 0 || argv.includes('--help') || argv.includes('-h')) {
+    printHelp();
+    process.exit(0);
+  }
+
+  const [command] = argv;
+
+  if (command !== 'crawl' && command !== 'search') {
+    console.error(`Unknown command: ${command}`);
+    console.error('Run with --help to see available commands.');
+    process.exit(1);
+  }
+
+  console.log(`Subcommand "${command}" is not implemented yet.`);
+}
+
+main(process.argv.slice(2));
+
