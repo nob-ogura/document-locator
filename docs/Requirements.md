@@ -54,7 +54,7 @@
   - `file_id`: TEXT
   - `file_name`: TEXT
   - `summary`: TEXT
-  - `keywords`: TEXT[] または JSONB
+  - `keywords`: TEXT[]
   - `embedding`: VECTOR 型
   - `updated_at`: TIMESTAMP WITH TIME ZONE
   - Start Page Token を保存するテーブル (フィールド名は実装側で決定可)。
