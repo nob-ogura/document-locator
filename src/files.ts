@@ -51,6 +51,15 @@ export interface FilesRepository {
   upsert(metadata: FileMetadata): Promise<FileRecord>;
   findByFileId(fileId: string): Promise<FileRecord | null>;
   markAsDeleted(fileId: string): Promise<FileRecord>;
+  /**
+   * Embedding ベクトルと file_id のリストを入力として、
+   * 類似度の高い順に最大 limit 件のレコードを返すベクトル検索。
+   */
+  vectorSearch(
+    queryEmbedding: number[],
+    fileIdFilter: string[],
+    limit: number
+  ): Promise<FileRecord[]>;
 }
 
 /**
@@ -115,6 +124,30 @@ export class InMemoryFilesRepository implements FilesRepository {
     return updated;
   }
 
+  async vectorSearch(
+    queryEmbedding: number[],
+    fileIdFilter: string[],
+    limit: number
+  ): Promise<FileRecord[]> {
+    const allRecords = await this.getAllRecords();
+    const activeRecords = filterActiveFilesForVectorSearch(allRecords);
+
+    const filterSet =
+      fileIdFilter.length > 0 ? new Set(fileIdFilter) : null;
+
+    const filteredRecords = filterSet
+      ? activeRecords.filter((record) => filterSet.has(record.fileId))
+      : activeRecords;
+
+    const sorted = sortRecordsByEmbeddingSimilarity(
+      filteredRecords,
+      queryEmbedding
+    );
+
+    const safeLimit = limit > 0 ? limit : 0;
+    return sorted.slice(0, safeLimit);
+  }
+
   /**
    * テスト向けのヘルパー: 全レコードを取得する。
    */
@@ -165,5 +198,58 @@ export function filterActiveFilesForVectorSearch(
   records: FileRecord[]
 ): FileRecord[] {
   return records.filter((record) => !record.isDeleted);
+}
+
+function cosineSimilarity(a: number[], b: number[]): number {
+  if (a.length === 0 || b.length === 0 || a.length !== b.length) {
+    return 0;
+  }
+
+  let dot = 0;
+  let normA = 0;
+  let normB = 0;
+
+  for (let i = 0; i < a.length; i += 1) {
+    const va = a[i];
+    const vb = b[i];
+    dot += va * vb;
+    normA += va * va;
+    normB += vb * vb;
+  }
+
+  if (normA === 0 || normB === 0) {
+    return 0;
+  }
+
+  return dot / (Math.sqrt(normA) * Math.sqrt(normB));
+}
+
+function sortRecordsByEmbeddingSimilarity(
+  records: FileRecord[],
+  queryEmbedding: number[]
+): FileRecord[] {
+  const scored = records.map((record) => ({
+    record,
+    score: cosineSimilarity(record.embedding ?? [], queryEmbedding),
+  }));
+
+  scored.sort((a, b) => b.score - a.score);
+
+  return scored.map((item) => item.record);
+}
+
+/**
+ * T6: `files` テーブルに対するベクトル検索関数のエントリーポイント。
+ *
+ * Embedding ベクトルと file_id フィルタリスト、および取得件数 N を受け取り、
+ * リポジトリ実装に委譲して関連度上位 N 件のレコードを返す。
+ */
+export async function vectorSearchFiles(
+  repository: FilesRepository,
+  queryEmbedding: number[],
+  fileIdFilter: string[],
+  limit: number
+): Promise<FileRecord[]> {
+  return repository.vectorSearch(queryEmbedding, fileIdFilter, limit);
 }
 

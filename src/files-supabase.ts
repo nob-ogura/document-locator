@@ -1,6 +1,11 @@
 declare const process: any;
 
-import type { FileMetadata, FileRecord, FilesRepository } from './files';
+import {
+  filterActiveFilesForVectorSearch,
+  type FileMetadata,
+  type FileRecord,
+  type FilesRepository,
+} from './files';
 import { getSupabaseClient } from './supabase';
 
 type SupabaseClientLike = {
@@ -29,6 +34,44 @@ function mapRowToFileRecord(row: any): FileRecord {
     createdAt: new Date(row.created_at),
     updatedAt: new Date(row.updated_at),
   };
+}
+
+function cosineSimilarity(a: number[], b: number[]): number {
+  if (a.length === 0 || b.length === 0 || a.length !== b.length) {
+    return 0;
+  }
+
+  let dot = 0;
+  let normA = 0;
+  let normB = 0;
+
+  for (let i = 0; i < a.length; i += 1) {
+    const va = a[i];
+    const vb = b[i];
+    dot += va * vb;
+    normA += va * va;
+    normB += vb * vb;
+  }
+
+  if (normA === 0 || normB === 0) {
+    return 0;
+  }
+
+  return dot / (Math.sqrt(normA) * Math.sqrt(normB));
+}
+
+function sortRecordsByEmbeddingSimilarity(
+  records: FileRecord[],
+  queryEmbedding: number[]
+): FileRecord[] {
+  const scored = records.map((record) => ({
+    record,
+    score: cosineSimilarity(record.embedding ?? [], queryEmbedding),
+  }));
+
+  scored.sort((a, b) => b.score - a.score);
+
+  return scored.map((item) => item.record);
 }
 
 export class SupabaseFilesRepository implements FilesRepository {
@@ -135,5 +178,44 @@ export class SupabaseFilesRepository implements FilesRepository {
 
     return this.upsert(metadata);
   }
-}
 
+  async vectorSearch(
+    queryEmbedding: number[],
+    fileIdFilter: string[],
+    limit: number
+  ): Promise<FileRecord[]> {
+    const client = (await this.getClient()) as any;
+
+    let query = client.from('files').select('*');
+
+    if (fileIdFilter.length > 0) {
+      query = query.in('file_id', fileIdFilter);
+    }
+
+    // Supabase 側では is_deleted=false でフィルタしつつ、
+    // 念のためアプリ側でも filterActiveFilesForVectorSearch を適用する。
+    query = query.eq('is_deleted', false);
+
+    const { data, error } = await query;
+
+    if (error) {
+      throw new Error(
+        `Supabase vector search select failed: ${
+          error.message ?? String(error)
+        }`
+      );
+    }
+
+    const rows: any[] = Array.isArray(data) ? data : data ? [data] : [];
+    const records = rows.map(mapRowToFileRecord);
+    const activeRecords = filterActiveFilesForVectorSearch(records);
+
+    const sorted = sortRecordsByEmbeddingSimilarity(
+      activeRecords,
+      queryEmbedding
+    );
+
+    const safeLimit = limit > 0 ? limit : 0;
+    return sorted.slice(0, safeLimit);
+  }
+}
