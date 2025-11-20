@@ -11,19 +11,22 @@
   "scripts": {
     "crawler": "node --experimental-strip-types src/cli/crawler.ts",
     "search": "node --experimental-strip-types src/cli/search.ts",
-    "db:apply": "node -e \"console.log('db:apply placeholder – no migrations defined yet');\"",
+    "db:apply": "node scripts/db-apply.mjs",
     "format": "biome format --write .",
     "lint": "biome check . --write",
     "typecheck": "tsc --noEmit",
-    "test": "vitest run",
+    "test": "node scripts/test-runner.mjs",
     "verify": "pnpm format && pnpm lint && pnpm typecheck && pnpm test"
   },
   "dependencies": {
-    "commander": "^12.1.0"
+    "@supabase/supabase-js": "^2.83.0",
+    "commander": "^12.1.0",
+    "dotenv": "^16.4.5",
+    "pg": "^8.16.3"
   },
   "devDependencies": {
-    "@types/node": "^22.9.3",
     "@biomejs/biome": "^2.3.6",
+    "@types/node": "^22.9.3",
     "typescript": "^5.9.3",
     "vitest": "^4.0.10"
   }

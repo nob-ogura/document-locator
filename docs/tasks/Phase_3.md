@@ -32,7 +32,7 @@ Scenario: drive_sync_state テーブルが初期化される
 ### T3: db:apply スクリプト
 ```
 Scenario: 環境変数が正しく設定されているときマイグレーションが順序通り適用される
-  Given SUPABASE_URL と SUPABASE_SERVICE_ROLE_KEY が環境変数に設定されている
+  Given SUPABASE_URL と SUPABASE_DB_PASSWORD が環境変数に設定されている
   And sql/ 配下に番号付きで並ぶ .sql ファイルが存在する
   When 開発者が `pnpm db:apply` を実行する
   Then 各 SQL がファイル名の昇順で適用され終了コード 0 で終了する

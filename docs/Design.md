@@ -142,6 +142,7 @@ drive_modified_at TIMESTAMPTZ NOT NULL;
   - `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `GOOGLE_REFRESH_TOKEN`  
   - `GOOGLE_DRIVE_TARGET_FOLDER_IDS`（カンマ区切りで複数可）  
   - `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`（スキーマは `public` 固定）  
+  - `SUPABASE_DB_PASSWORD`（PostgreSQL 直結・マイグレーション用の DB パスワード）  
   - `OPENAI_API_KEY`  
   - `LOG_LEVEL=info`
 - **任意**: `OPENAI_ORG`、`TZ=UTC`（modifiedTime 比較を安定させるため推奨）
@@ -160,6 +161,7 @@ GOOGLE_DRIVE_TARGET_FOLDER_IDS=1abcDEFghiJKLmn,1zzzYYYxxxWWW
 
 SUPABASE_URL=https://abcxyz.supabase.co
 SUPABASE_SERVICE_ROLE_KEY=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
+SUPABASE_DB_PASSWORD=super-secret-db-password
 
 OPENAI_API_KEY=sk-proj-xxxx
 OPENAI_ORG=org_123456
