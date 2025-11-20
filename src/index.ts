@@ -3,4 +3,4 @@ export function greet(name: string): string {
 }
 
 // Quick sanity call used while scaffolding; safe to remove later if unneeded.
-void greet('document-locator');
+void greet("document-locator");

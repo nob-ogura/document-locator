@@ -8,8 +8,13 @@
   "engines": {
     "node": ">=22"
   },
-  "scripts": {},
+  "scripts": {
+    "lint": "biome check .",
+    "test": "vitest run"
+  },
   "devDependencies": {
-    "typescript": "^5.9.3"
+    "@biomejs/biome": "^2.3.6",
+    "typescript": "^5.9.3",
+    "vitest": "^4.0.10"
   }
 }
