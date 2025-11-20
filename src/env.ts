@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 
-type LogLevel = "info" | "debug" | "error";
+import type { LogLevel } from "./logger.js";
 
 export type AppConfig = {
   crawlerMode: string;
