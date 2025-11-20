@@ -14,7 +14,8 @@
     "db:apply": "node -e \"console.log('db:apply placeholder – no migrations defined yet');\"",
     "format": "biome format --write .",
     "lint": "biome check . --write",
-    "test": "vitest run"
+    "test": "vitest run",
+    "verify": "pnpm format && pnpm lint && pnpm test"
   },
   "dependencies": {
     "commander": "^12.1.0"
