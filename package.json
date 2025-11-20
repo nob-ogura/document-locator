@@ -13,7 +13,7 @@
     "search": "node --experimental-strip-types src/cli/search.ts",
     "db:apply": "node scripts/db-apply.mjs",
     "format": "biome format --write .",
-    "lint": "biome check . --write",
+    "lint": "biome check --write --assist-enabled=true .",
     "typecheck": "tsc --noEmit",
     "test": "node scripts/test-runner.mjs",
     "verify": "pnpm format && pnpm lint && pnpm typecheck && pnpm test"
