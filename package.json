@@ -14,13 +14,15 @@
     "db:apply": "node -e \"console.log('db:apply placeholder – no migrations defined yet');\"",
     "format": "biome format --write .",
     "lint": "biome check . --write",
+    "typecheck": "tsc --noEmit",
     "test": "vitest run",
-    "verify": "pnpm format && pnpm lint && pnpm test"
+    "verify": "pnpm format && pnpm lint && pnpm typecheck && pnpm test"
   },
   "dependencies": {
     "commander": "^12.1.0"
   },
   "devDependencies": {
+    "@types/node": "^22.9.3",
     "@biomejs/biome": "^2.3.6",
     "typescript": "^5.9.3",
     "vitest": "^4.0.10"
