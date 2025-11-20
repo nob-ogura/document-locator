@@ -31,7 +31,7 @@ Scenario: 型チェック可能な TypeScript 雛形がある
 ### T3: 開発ツール導入（biome / vitest）
 ```
 Scenario: Lint が空プロジェクトで成功する
-  Given biome 設定ファイル（例: biome.json）がリポジトリ直下に存在する
+  Given biome 設定ファイル（biome.json）がリポジトリ直下に存在する
   When 開発者が `pnpm lint` を実行する
   Then コマンドが終了コード 0 で完了する
 

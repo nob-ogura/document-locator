@@ -8,5 +8,8 @@
   "engines": {
     "node": ">=22"
   },
-  "scripts": {}
+  "scripts": {},
+  "devDependencies": {
+    "typescript": "^5.9.3"
+  }
 }
