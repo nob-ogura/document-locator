@@ -76,4 +76,11 @@ describe("search CLI", () => {
     expect(result.status).toBe(1);
     expect(result.stderr).toMatch(/SEARCH_MAX_LOOP_COUNT/);
   });
+
+  it("0件かつキーワード1件になったら見つかりませんでしたを表示する", () => {
+    const result = runSearchCli(["空振りクエリ"]);
+
+    expect(result.status).toBe(0);
+    expect(result.stdout).toMatch(/見つかりませんでした/);
+  });
 });

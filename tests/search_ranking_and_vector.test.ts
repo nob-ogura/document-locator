@@ -185,4 +185,53 @@ describe("runSearchWithRanking", () => {
     expect(result.finalBucket).toBe("few");
     expect(result.results.map((row) => row.file_id)).toEqual(rerankOrder);
   });
+
+  it("1件なら即時出力してリランキングしない", async () => {
+    const initialRows = buildRows(1);
+
+    const initialSearch = vi.fn(async ({ request }: { request: SearchRequest }) => ({
+      keywords: ["kw"],
+      driveQuery: `drive:${request.query}`,
+      files: [{ id: initialRows[0].file_id, name: initialRows[0].file_name }],
+    }));
+
+    const supabaseRequest = vi.fn<NonNullable<SupabaseClient["request"]>>(async (input) => {
+      const url = typeof input === "string" ? input : "";
+      if (url.includes("drive_file_index")) {
+        return new Response(JSON.stringify(initialRows), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
+      return new Response("[]", { status: 200, headers: { "Content-Type": "application/json" } });
+    });
+
+    const openai = {
+      logger: createLogger("debug"),
+      apiKey: "sk",
+      request: vi.fn(),
+      chat: { completions: { create: vi.fn() } },
+      embeddings: { create: vi.fn() },
+    };
+
+    const result = await runSearchWithRanking({
+      config: baseConfig,
+      request: { query: "single hit", filters: {}, searchMaxLoopCount: 2 },
+      deps: {
+        supabase: {
+          request: supabaseRequest,
+          logger: createLogger("debug"),
+          credentials: { url: "", serviceRoleKey: "" },
+        },
+        openai,
+        initialSearch,
+        logger: createLogger("debug"),
+      },
+    });
+
+    expect(result.results).toHaveLength(1);
+    expect(result.finalBucket).toBe("single");
+    expect(openai.chat.completions.create).not.toHaveBeenCalled();
+    expect(openai.embeddings.create).not.toHaveBeenCalled();
+  });
 });

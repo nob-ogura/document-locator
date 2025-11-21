@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import type { SupabaseClient } from "../src/clients.js";
+import type { OpenAIClient, SupabaseClient } from "../src/clients.js";
 import type { DriveFileIndexRow } from "../src/drive_file_index_repository.js";
 import type { AppConfig } from "../src/env.js";
 import { createLogger } from "../src/logger.js";
@@ -120,5 +120,102 @@ describe("runSearchWithBranching", () => {
 
     const secondCallArgs = initialSearch.mock.calls[1]?.[0]?.request.query ?? "";
     expect(secondCallArgs).toContain("narrow term");
+  });
+
+  it("ヒット0件なら緩和案を適用して再検索する", async () => {
+    const initialSearch = vi.fn(async ({ request }: { request: SearchRequest }) => {
+      const keywords = request.overrideKeywords ?? ["alpha", "beta", "gamma"];
+      const hitCount = keywords.length === 1 ? 2 : 0;
+      const files = Array.from({ length: hitCount }, (_, index) => ({
+        id: `file-${keywords.length}-${index}`,
+        name: `mock-${index}`,
+      }));
+
+      return {
+        keywords,
+        driveQuery: `drive-query-${keywords.length}`,
+        files,
+      };
+    });
+
+    const chatCreate = vi.fn<OpenAIClient["chat"]["completions"]["create"]>().mockResolvedValue({
+      id: "relax-chat",
+      object: "chat.completion",
+      choices: [
+        {
+          index: 0,
+          message: { role: "assistant", content: JSON.stringify({ keywords: ["alpha"] }) },
+        },
+      ],
+    });
+
+    const openai = {
+      chat: { completions: { create: chatCreate } },
+    } satisfies Pick<OpenAIClient, "chat">;
+
+    const result = await runSearchWithBranching({
+      config: baseConfig,
+      request: { query: "zero hit case", filters: {}, searchMaxLoopCount: 3 },
+      deps: {
+        supabase: buildSupabaseMock(),
+        initialSearch,
+        openai,
+        logger: createLogger("debug"),
+      },
+    });
+
+    expect(initialSearch).toHaveBeenCalledTimes(2);
+    expect(chatCreate).toHaveBeenCalledTimes(1);
+
+    const secondRequest = initialSearch.mock.calls[1]?.[0]?.request;
+    expect(secondRequest?.overrideKeywords).toEqual(["alpha"]);
+    expect(result.bucket).toBe("few");
+    expect(result.hitCount).toBe(2);
+    expect(result.iteration).toBe(2);
+  });
+
+  it("キーワードが1件になっても0件なら即終了する", async () => {
+    const initialSearch = vi.fn(async ({ request }: { request: SearchRequest }) => {
+      const keywords = request.overrideKeywords ?? ["alpha", "beta"];
+      return {
+        keywords,
+        driveQuery: `drive-query-${keywords.length}`,
+        files: [],
+      };
+    });
+
+    const chatCreate = vi.fn<OpenAIClient["chat"]["completions"]["create"]>().mockResolvedValue({
+      id: "relax-chat",
+      object: "chat.completion",
+      choices: [
+        {
+          index: 0,
+          message: { role: "assistant", content: JSON.stringify({ keywords: ["alpha"] }) },
+        },
+      ],
+    });
+
+    const openai = {
+      chat: { completions: { create: chatCreate } },
+    } satisfies Pick<OpenAIClient, "chat">;
+
+    const result = await runSearchWithBranching({
+      config: baseConfig,
+      request: { query: "still none", filters: {}, searchMaxLoopCount: 3 },
+      deps: {
+        supabase: buildSupabaseMock(),
+        initialSearch,
+        openai,
+        logger: createLogger("debug"),
+      },
+    });
+
+    expect(initialSearch).toHaveBeenCalledTimes(2);
+    expect(chatCreate).toHaveBeenCalledTimes(1);
+    expect(result.bucket).toBe("none");
+    expect(result.hitCount).toBe(0);
+    expect(result.iteration).toBe(2);
+    expect(result.loopLimitReached).toBe(true);
+    expect(result.keywords).toEqual(["alpha"]);
   });
 });

@@ -59,10 +59,11 @@ const shouldUseMockClients = (): boolean =>
   process.env.NODE_ENV === "test";
 
 const createMockGoogleDriveClient = (logger: Logger): GoogleDriveClient => {
-  const emptyList = new Response(JSON.stringify({ files: [] }), {
-    status: 200,
-    headers: { "Content-Type": "application/json" },
-  });
+  const emptyList = () =>
+    new Response(JSON.stringify({ files: [] }), {
+      status: 200,
+      headers: { "Content-Type": "application/json" },
+    });
 
   return {
     logger,
@@ -72,13 +73,13 @@ const createMockGoogleDriveClient = (logger: Logger): GoogleDriveClient => {
       clientSecret: "mock-client-secret",
       refreshToken: "mock-refresh-token",
     },
-    request: async () => emptyList,
+    request: async () => emptyList(),
     auth: { fetchAccessToken: async () => "mock-access-token" },
     folders: { ensureTargetsExist: async () => undefined },
     files: {
-      list: async () => emptyList,
-      export: async () => emptyList,
-      get: async () => emptyList,
+      list: async () => emptyList(),
+      export: async () => emptyList(),
+      get: async () => emptyList(),
     },
   };
 };
@@ -219,6 +220,11 @@ program
           : undefined,
         result.initial.loopLimitReached && result.initial.bucket === "tooMany"
           ? "10 件以下に絞り込めませんでした"
+          : undefined,
+        result.initial.bucket === "none" &&
+        result.initial.hitCount === 0 &&
+        result.initial.keywords.length <= 1
+          ? "見つかりませんでした"
           : undefined,
       ].filter((line): line is string => Boolean(line));
 

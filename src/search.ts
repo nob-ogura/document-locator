@@ -21,6 +21,11 @@ export type SearchRequest = {
   query: string;
   filters: SearchFilters;
   searchMaxLoopCount: number;
+  /**
+   * Optional override for keywords when re-trying after zero hits.
+   * When provided, keyword extraction is skipped.
+   */
+  overrideKeywords?: string[];
 };
 
 export type InitialSearchDeps = {
@@ -65,6 +70,17 @@ export type SearchLoopDeps = InitialSearchDeps & {
   initialSearch?: typeof runInitialDriveSearch;
 };
 
+type RelaxationFilters = {
+  after?: string | null;
+  before?: string | null;
+  mime?: string | null;
+};
+
+type RelaxationProposal = {
+  keywords?: string[];
+  filters?: RelaxationFilters;
+};
+
 export type SearchExecutionDeps = SearchLoopDeps & {
   openai?: OpenAIClient;
   vectorSearch?: typeof vectorSearchDriveFileIndex;
@@ -90,6 +106,205 @@ const escapeSingleQuotes = (value: string): string => value.replace(/'/g, "\\'")
 
 const normalizeKeywords = (values: string[]): string[] =>
   Array.from(new Set(values.map((value) => value.trim()).filter((value) => value.length > 0)));
+
+const hasFilters = (filters: SearchFilters): boolean =>
+  Boolean(filters.after ?? filters.before ?? filters.mime);
+
+const filtersEqual = (a: SearchFilters, b: SearchFilters): boolean =>
+  (a.after ?? null) === (b.after ?? null) &&
+  (a.before ?? null) === (b.before ?? null) &&
+  (a.mime ?? null) === (b.mime ?? null);
+
+const collectJsonCandidates = (content: string): string[] => {
+  const trimmed = content.trim();
+  const candidates = new Set<string>(trimmed ? [trimmed] : []);
+
+  const codeMatch = trimmed.match(/```(?:json)?\s*([\s\S]*?)```/i);
+  if (codeMatch?.[1]) candidates.add(codeMatch[1].trim());
+
+  const objectMatch = trimmed.match(/\{[\s\S]*\}/);
+  if (objectMatch?.[0]) candidates.add(objectMatch[0].trim());
+
+  return Array.from(candidates).filter((value) => value.length > 0);
+};
+
+const normalizeRelaxationProposal = (raw: unknown): RelaxationProposal | null => {
+  if (!raw || typeof raw !== "object") return null;
+
+  const proposal: RelaxationProposal = {};
+  const keywordsRaw = (raw as Record<string, unknown>).keywords;
+
+  if (Array.isArray(keywordsRaw)) {
+    proposal.keywords = normalizeKeywords(keywordsRaw.map((value) => String(value)));
+  } else if (typeof keywordsRaw === "string") {
+    proposal.keywords = normalizeKeywords([keywordsRaw]);
+  }
+
+  const filtersRaw = (raw as Record<string, unknown>).filters;
+  if (filtersRaw && typeof filtersRaw === "object") {
+    const relaxed: RelaxationFilters = {};
+    const record = filtersRaw as Record<string, unknown>;
+
+    relaxed.after =
+      record.after === null
+        ? null
+        : typeof record.after === "string"
+          ? record.after.trim()
+          : undefined;
+
+    relaxed.before =
+      record.before === null
+        ? null
+        : typeof record.before === "string"
+          ? record.before.trim()
+          : undefined;
+
+    relaxed.mime =
+      record.mime === null
+        ? null
+        : typeof record.mime === "string"
+          ? record.mime.trim()
+          : undefined;
+
+    proposal.filters = relaxed;
+  }
+
+  return proposal.keywords || proposal.filters ? proposal : null;
+};
+
+const parseRelaxationProposal = (content: string, logger?: Logger): RelaxationProposal | null => {
+  const candidates = collectJsonCandidates(content);
+
+  for (const candidate of candidates) {
+    try {
+      const parsed = JSON.parse(candidate);
+      const normalized = normalizeRelaxationProposal(parsed);
+      if (normalized) return normalized;
+    } catch (error) {
+      logger?.debug("search: failed to parse relaxation candidate", {
+        candidate,
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+  }
+
+  return null;
+};
+
+const mergeRelaxedFilters = (
+  current: SearchFilters,
+  relaxed?: RelaxationFilters,
+): SearchFilters => {
+  if (!relaxed) return { ...current };
+
+  const merged: SearchFilters = { ...current };
+  const apply = (key: keyof SearchFilters, value?: string | null) => {
+    if (value === null) {
+      delete merged[key];
+      return;
+    }
+    if (typeof value === "string" && value.trim().length > 0) {
+      merged[key] = value.trim();
+      return;
+    }
+    if (value !== undefined) {
+      delete merged[key];
+    }
+  };
+
+  apply("after", relaxed.after);
+  apply("before", relaxed.before);
+  apply("mime", relaxed.mime);
+
+  return merged;
+};
+
+const buildFallbackRelaxationPlan = (
+  keywords: string[],
+  filters: SearchFilters,
+): { keywords: string[]; filters: SearchFilters } | null => {
+  if (hasFilters(filters)) {
+    return { keywords, filters: {} };
+  }
+
+  if (keywords.length > 1) {
+    return { keywords: keywords.slice(0, -1), filters };
+  }
+
+  return null;
+};
+
+const relaxSearchConstraints = async (options: {
+  openai?: Pick<OpenAIClient, "chat">;
+  query: string;
+  keywords: string[];
+  filters: SearchFilters;
+  logger?: Logger;
+}): Promise<{ keywords: string[]; filters: SearchFilters } | null> => {
+  const { openai, query, keywords, filters, logger } = options;
+
+  let proposal: RelaxationProposal | null = null;
+
+  if (openai) {
+    try {
+      const response = await openai.chat.completions.create({
+        model: "gpt-4o-mini",
+        temperature: 0,
+        max_tokens: 200,
+        messages: [
+          {
+            role: "system",
+            content:
+              "The previous search returned zero hits. " +
+              "Provide ONE relaxed search plan by either dropping less important keywords " +
+              "or removing date/MIME filters. " +
+              "Respond ONLY with JSON: " +
+              '{"keywords":["kw1","kw2"],"filters":{"after":null,"before":null,"mime":null}}. ' +
+              "Use null to remove a filter.",
+          },
+          {
+            role: "user",
+            content: JSON.stringify({ query, keywords, filters }),
+          },
+        ],
+      });
+
+      const content = response.choices?.[0]?.message?.content ?? "";
+      proposal = parseRelaxationProposal(content, logger);
+
+      if (!proposal) {
+        logger?.info("search: relaxation proposal could not be parsed; applying fallback", {
+          returned: content,
+        });
+      }
+    } catch (error) {
+      logger?.info("search: relaxation proposal request failed; applying fallback", {
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+  }
+
+  const merged = proposal
+    ? {
+        keywords: proposal.keywords ? normalizeKeywords(proposal.keywords) : keywords,
+        filters: mergeRelaxedFilters(filters, proposal.filters),
+      }
+    : null;
+
+  const fallback = buildFallbackRelaxationPlan(keywords, filters);
+  const plan = merged ?? fallback;
+
+  if (!plan) return null;
+
+  const keywordsReduced = plan.keywords.length < keywords.length;
+  const filtersChanged = !filtersEqual(filters, plan.filters);
+
+  if (!keywordsReduced && !filtersChanged && fallback) {
+    return fallback;
+  }
+
+  return plan;
+};
 
 const uniqueDriveFileIds = (files: DriveFileEntry[]): string[] =>
   Array.from(
@@ -229,17 +444,25 @@ export const runInitialDriveSearch = async (options: {
   const openai = options.deps?.openai ?? defaultOpenAI.openai;
 
   let extracted: string[] = [];
+  const useOverride = Array.isArray(request.overrideKeywords);
 
-  try {
-    extracted = await extractKeywords({
-      openai,
-      text: request.query,
-      logger,
-    });
-    logger.info("search: keywords extracted", { count: extracted.length });
-  } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
-    logger.info("search: keyword extraction failed; falling back to raw query", { error: message });
+  if (useOverride) {
+    extracted = request.overrideKeywords ?? [];
+    logger.info("search: using override keywords", { count: extracted.length });
+  } else {
+    try {
+      extracted = await extractKeywords({
+        openai,
+        text: request.query,
+        logger,
+      });
+      logger.info("search: keywords extracted", { count: extracted.length });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      logger.info("search: keyword extraction failed; falling back to raw query", {
+        error: message,
+      });
+    }
   }
 
   const normalizedKeywords = normalizeKeywords(extracted);
@@ -357,7 +580,62 @@ export const runSearchWithBranching = async (options: {
     });
 
     const loopLimitReached =
-      hitResult.bucket === "tooMany" && iteration >= options.request.searchMaxLoopCount;
+      (hitResult.bucket === "tooMany" || hitResult.bucket === "none") &&
+      iteration >= options.request.searchMaxLoopCount;
+
+    if (hitResult.bucket === "none") {
+      const keywordCount = initial.keywords.length;
+      const exhaustedKeywords = keywordCount <= 1;
+
+      if (exhaustedKeywords || loopLimitReached) {
+        return {
+          ...hitResult,
+          keywords: initial.keywords,
+          driveQuery: initial.driveQuery,
+          files: initial.files,
+          iteration,
+          loopLimitReached: loopLimitReached || exhaustedKeywords,
+          query: currentRequest.query,
+        };
+      }
+
+      const relaxed = await relaxSearchConstraints({
+        openai: options.deps?.openai,
+        query: currentRequest.query,
+        keywords: initial.keywords,
+        filters: currentRequest.filters,
+        logger,
+      });
+
+      if (!relaxed) {
+        logger.info("search: no relaxation plan available; stopping");
+        return {
+          ...hitResult,
+          keywords: initial.keywords,
+          driveQuery: initial.driveQuery,
+          files: initial.files,
+          iteration,
+          loopLimitReached: true,
+          query: currentRequest.query,
+        };
+      }
+
+      const previousFilters = currentRequest.filters;
+
+      currentRequest = {
+        ...currentRequest,
+        filters: relaxed.filters,
+        overrideKeywords: relaxed.keywords,
+      };
+
+      logger.info("search: retrying with relaxed constraints", {
+        iteration: iteration + 1,
+        keywords: relaxed.keywords.length,
+        filtersChanged: !filtersEqual(previousFilters, relaxed.filters),
+      });
+
+      continue;
+    }
 
     if (hitResult.bucket !== "tooMany" || loopLimitReached) {
       return {
