@@ -104,6 +104,31 @@ describe("listDriveFilesPaged", () => {
     expect(params?.q).toBe("modifiedTime > '2024-09-01T00:00:00Z'");
   });
 
+  it("mode=diff で drive_sync_state と同一の modifiedTime を除外する", async () => {
+    const listMock = vi.fn<GoogleDriveClient["files"]["list"]>().mockResolvedValue(
+      createListResponse([
+        { id: "same", modifiedTime: "2024-09-10T00:00:00Z" },
+        { id: "after", modifiedTime: "2024-09-10T00:00:01Z" },
+      ]),
+    );
+
+    vi.spyOn(syncRepo, "getDriveSyncState").mockResolvedValue({
+      id: "global",
+      drive_modified_at: "2024-09-10T00:00:00Z",
+    });
+
+    const driveClient = createDriveClient(listMock);
+    const supabaseClient = createSupabaseClient();
+
+    const files = await listDriveFilesPaged({
+      driveClient,
+      supabaseClient,
+      mode: "diff",
+    });
+
+    expect(files.map((f) => f.id)).toEqual(["after"]);
+  });
+
   it("429 応答を指数バックオフでリトライしてページングを継続する", async () => {
     vi.useFakeTimers();
 

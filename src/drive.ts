@@ -2,6 +2,7 @@ import type { GoogleDriveClient, GoogleDriveFilesListParams, SupabaseClient } fr
 import { type DriveSyncStateRow, getDriveSyncState } from "./drive_sync_state_repository.ts";
 import { isRetryableStatus } from "./http.ts";
 import type { Logger } from "./logger.ts";
+import { isAfter } from "./time.ts";
 
 export type CrawlMode = "auto" | "full" | "diff";
 
@@ -136,6 +137,19 @@ const buildListParams = (
   supportsAllDrives: true,
 });
 
+const filterBySyncState = (
+  files: DriveFileEntry[],
+  effectiveMode: CrawlMode,
+  syncState: DriveSyncStateRow | null,
+): DriveFileEntry[] => {
+  if (effectiveMode !== "diff" || !syncState?.drive_modified_at) return files;
+
+  return files.filter((file) => {
+    if (!file.modifiedTime) return true;
+    return isAfter(file.modifiedTime, syncState.drive_modified_at);
+  });
+};
+
 /**
  * Drive API files.list をページングし、フル／差分クロールの判定を行う骨格実装。
  * 返却される配列は files.list から得た各ページの files を連結したもの。
@@ -168,7 +182,8 @@ export const listDriveFilesPaged = async (
     const parsed = await parseListResponse(response);
 
     if (parsed.files && parsed.files.length > 0) {
-      aggregated.push(...parsed.files);
+      const filtered = filterBySyncState(parsed.files, effectiveMode, syncState);
+      aggregated.push(...filtered);
     }
 
     pageToken = parsed.nextPageToken ?? undefined;
