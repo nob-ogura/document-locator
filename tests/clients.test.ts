@@ -23,6 +23,12 @@ const baseConfig: AppConfig = {
   logLevel: "info",
 };
 
+const createJsonResponse = (data: unknown, status = 200): Response =>
+  new Response(JSON.stringify(data), {
+    status,
+    headers: { "Content-Type": "application/json" },
+  });
+
 describe("external client factories", () => {
   it("環境設定からクライアントを生成し、ロガーとリトライを共有する", async () => {
     const logger = createLogger("debug");
@@ -83,5 +89,110 @@ describe("external client factories", () => {
     const supabaseHeaders = supabaseOptions.headers as Record<string, string> | undefined;
     expect(supabaseHeaders?.apikey).toBe(baseConfig.supabaseServiceRoleKey);
     expect(supabaseHeaders?.Authorization).toBe(`Bearer ${baseConfig.supabaseServiceRoleKey}`);
+  });
+
+  it("Drive トークンをリフレッシュしターゲットフォルダの存在を確認する", async () => {
+    const logger = createLogger("debug");
+    type RequestInfo = Parameters<typeof fetch>[0];
+    type Retrier = (input: RequestInfo, options?: FetchWithRetryOptions) => Promise<Response>;
+
+    const retrier = vi
+      .fn<Retrier>()
+      .mockResolvedValueOnce(createJsonResponse({ access_token: "ya29.test" }))
+      .mockResolvedValueOnce(
+        createJsonResponse({
+          id: "folderA",
+          name: "Target Folder",
+          mimeType: "application/vnd.google-apps.folder",
+          trashed: false,
+        }),
+      );
+
+    const drive = createGoogleDriveClient(baseConfig, { logger, fetchWithRetry: retrier });
+
+    await drive.folders.ensureTargetsExist();
+
+    expect(retrier).toHaveBeenCalledTimes(2);
+
+    const [tokenUrl, tokenOptions] = retrier.mock.calls[0];
+    expect(String(tokenUrl)).toContain("oauth2.googleapis.com/token");
+    expect(tokenOptions?.method).toBe("POST");
+    expect(String(tokenOptions?.body)).toContain("refresh_token=refresh-token");
+
+    const [folderUrl, folderOptions] = retrier.mock.calls[1];
+    const parsed = new URL(String(folderUrl));
+    expect(parsed.pathname).toBe("/drive/v3/files/folderA");
+    expect(parsed.searchParams.get("fields")).toBe("id,name,mimeType,trashed");
+    const folderHeaders = folderOptions?.headers as Record<string, string> | undefined;
+    expect(folderHeaders?.Authorization).toBe("Bearer ya29.test");
+  });
+
+  it("ターゲットフォルダが欠如している場合は例外を送出する", async () => {
+    const logger = createLogger("debug");
+    type RequestInfo = Parameters<typeof fetch>[0];
+    type Retrier = (input: RequestInfo, options?: FetchWithRetryOptions) => Promise<Response>;
+
+    const retrier = vi
+      .fn<Retrier>()
+      .mockResolvedValueOnce(createJsonResponse({ access_token: "ya29.test" }))
+      .mockResolvedValueOnce(new Response("not found", { status: 404 }));
+
+    const drive = createGoogleDriveClient(baseConfig, { logger, fetchWithRetry: retrier });
+
+    await expect(drive.folders.ensureTargetsExist()).rejects.toThrow(/folderA/i);
+    expect(retrier).toHaveBeenCalledTimes(2);
+  });
+
+  it("files.list がターゲットフォルダ配下にクエリを限定する", async () => {
+    type RequestInfo = Parameters<typeof fetch>[0];
+    type Retrier = (input: RequestInfo, options?: FetchWithRetryOptions) => Promise<Response>;
+
+    const retrier = vi.fn<Retrier>().mockResolvedValue(createJsonResponse({ files: [] }));
+
+    const drive = createGoogleDriveClient(baseConfig, { fetchWithRetry: retrier });
+
+    await drive.files.list({
+      accessToken: "ya29.test",
+      q: "mimeType='application/pdf'",
+      pageSize: 10,
+      pageToken: "next-1",
+      orderBy: "modifiedTime desc",
+    });
+
+    expect(retrier).toHaveBeenCalledTimes(1);
+    const [url, options] = retrier.mock.calls[0];
+    const parsed = new URL(String(url));
+    expect(parsed.pathname).toBe("/drive/v3/files");
+    expect(parsed.searchParams.get("q")).toBe(
+      "('folderA' in parents) and (mimeType='application/pdf')",
+    );
+    expect(parsed.searchParams.get("pageSize")).toBe("10");
+    expect(parsed.searchParams.get("pageToken")).toBe("next-1");
+    expect(parsed.searchParams.get("orderBy")).toBe("modifiedTime desc");
+    const headers = options?.headers as Record<string, string> | undefined;
+    expect(headers?.Authorization).toBe("Bearer ya29.test");
+  });
+
+  it("files.list は accessToken 省略時に自動でトークンを取得する", async () => {
+    type RequestInfo = Parameters<typeof fetch>[0];
+    type Retrier = (input: RequestInfo, options?: FetchWithRetryOptions) => Promise<Response>;
+
+    const retrier = vi
+      .fn<Retrier>()
+      .mockResolvedValueOnce(createJsonResponse({ access_token: "auto-token" }))
+      .mockResolvedValueOnce(createJsonResponse({ files: [] }));
+
+    const drive = createGoogleDriveClient(baseConfig, { fetchWithRetry: retrier });
+
+    await drive.files.list({ q: "name = 'report'" });
+
+    expect(retrier).toHaveBeenCalledTimes(2);
+    const listCall = retrier.mock.calls[1];
+    if (!listCall) throw new Error("files.list call was not recorded");
+    const [url, options] = listCall;
+    const parsed = new URL(String(url));
+    expect(parsed.searchParams.get("q")).toBe("('folderA' in parents) and (name = 'report')");
+    const headers = options?.headers as Record<string, string> | undefined;
+    expect(headers?.Authorization).toBe("Bearer auto-token");
   });
 });

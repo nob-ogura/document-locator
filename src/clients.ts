@@ -56,6 +56,33 @@ const createRetrier =
 
 export type GoogleDriveRequestInit = BaseRequestInit & { accessToken?: string };
 
+export type GoogleDriveFilesListParams = {
+  accessToken?: string;
+  q?: string;
+  fields?: string;
+  pageSize?: number;
+  pageToken?: string;
+  orderBy?: string;
+  spaces?: string;
+  corpora?: string;
+  includeItemsFromAllDrives?: boolean;
+  supportsAllDrives?: boolean;
+};
+
+type GoogleDriveAccessTokenResponse = {
+  access_token?: string;
+  expires_in?: number;
+  token_type?: string;
+  scope?: string;
+};
+
+type GoogleDriveFolderMetadata = {
+  id?: string;
+  name?: string;
+  mimeType?: string;
+  trashed?: boolean;
+};
+
 export type GoogleDriveClient = {
   logger: Logger;
   targetFolderIds: string[];
@@ -65,6 +92,15 @@ export type GoogleDriveClient = {
     refreshToken: string;
   };
   request: (input: RequestInfo, init?: GoogleDriveRequestInit) => Promise<Response>;
+  auth: {
+    fetchAccessToken: () => Promise<string>;
+  };
+  folders: {
+    ensureTargetsExist: () => Promise<void>;
+  };
+  files: {
+    list: (params?: GoogleDriveFilesListParams, init?: GoogleDriveRequestInit) => Promise<Response>;
+  };
 };
 
 export const createGoogleDriveClient = (
@@ -73,6 +109,39 @@ export const createGoogleDriveClient = (
 ): GoogleDriveClient => {
   const logger = ensureLogger(config, deps.logger);
   const retryRequest = createRetrier(logger, deps.fetchWithRetry ?? fetchWithRetry, deps.fetch);
+
+  const fetchAccessToken: GoogleDriveClient["auth"]["fetchAccessToken"] = async () => {
+    const params = new URLSearchParams({
+      client_id: config.googleClientId,
+      client_secret: config.googleClientSecret,
+      refresh_token: config.googleRefreshToken,
+      grant_type: "refresh_token",
+    });
+
+    const response = await retryRequest("https://oauth2.googleapis.com/token", {
+      method: "POST",
+      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      body: params.toString(),
+    });
+
+    if (!response.ok) {
+      throw new Error(`Failed to refresh Google access token: HTTP ${response.status}`);
+    }
+
+    let parsed: GoogleDriveAccessTokenResponse;
+    try {
+      parsed = (await response.json()) as GoogleDriveAccessTokenResponse;
+    } catch (error) {
+      throw new Error(`Failed to parse Google access token response: ${String(error)}`);
+    }
+
+    if (!parsed.access_token) {
+      throw new Error("Google access token is missing in the response");
+    }
+
+    logger.debug("google drive: refreshed access token");
+    return parsed.access_token;
+  };
 
   const request: GoogleDriveClient["request"] = (input, init = {}) => {
     const { accessToken, headers, ...rest } = init;
@@ -88,6 +157,78 @@ export const createGoogleDriveClient = (
     });
   };
 
+  const buildFolderScope = (): string =>
+    config.googleDriveTargetFolderIds.map((id) => `'${id}' in parents`).join(" or ");
+
+  const toScopedQuery = (userQuery?: string): string => {
+    const folderScope = buildFolderScope();
+    if (!userQuery || userQuery.trim() === "") {
+      return `(${folderScope})`;
+    }
+    return `(${folderScope}) and (${userQuery})`;
+  };
+
+  const buildFilesListUrl = (params: Omit<GoogleDriveFilesListParams, "accessToken"> = {}) => {
+    const searchParams = new URLSearchParams();
+    searchParams.set("q", toScopedQuery(params.q));
+
+    if (params.fields) searchParams.set("fields", params.fields);
+    if (params.pageSize !== undefined) searchParams.set("pageSize", String(params.pageSize));
+    if (params.pageToken) searchParams.set("pageToken", params.pageToken);
+    if (params.orderBy) searchParams.set("orderBy", params.orderBy);
+    if (params.spaces) searchParams.set("spaces", params.spaces);
+    if (params.corpora) searchParams.set("corpora", params.corpora);
+    if (params.includeItemsFromAllDrives !== undefined) {
+      searchParams.set("includeItemsFromAllDrives", String(params.includeItemsFromAllDrives));
+    }
+    if (params.supportsAllDrives !== undefined) {
+      searchParams.set("supportsAllDrives", String(params.supportsAllDrives));
+    }
+
+    return `/drive/v3/files?${searchParams.toString()}`;
+  };
+
+  const ensureFolderExists = async (folderId: string, accessToken: string): Promise<void> => {
+    const encodedId = encodeURIComponent(folderId);
+    const url = `/drive/v3/files/${encodedId}?fields=id,name,mimeType,trashed`;
+    const response = await request(url, { accessToken });
+
+    if (response.status === 404) {
+      throw new Error(`Target folder not found: ${folderId}`);
+    }
+
+    if (!response.ok) {
+      throw new Error(`Failed to load folder ${folderId}: HTTP ${response.status}`);
+    }
+
+    const metadata = (await response.json()) as GoogleDriveFolderMetadata;
+    const isFolder = metadata.mimeType === "application/vnd.google-apps.folder";
+    const isTrashed = metadata.trashed === true;
+
+    if (!isFolder || isTrashed) {
+      throw new Error(`Target folder is not available: ${folderId}`);
+    }
+  };
+
+  const folders: GoogleDriveClient["folders"] = {
+    ensureTargetsExist: async () => {
+      const accessToken = await fetchAccessToken();
+
+      for (const id of config.googleDriveTargetFolderIds) {
+        await ensureFolderExists(id, accessToken);
+      }
+    },
+  };
+
+  const files: GoogleDriveClient["files"] = {
+    list: async (params = {}, init = {}) => {
+      const { accessToken: providedToken, ...rest } = params;
+      const accessToken = providedToken ?? (await fetchAccessToken());
+      const url = buildFilesListUrl(rest);
+      return request(url, { ...init, accessToken });
+    },
+  };
+
   return {
     logger,
     targetFolderIds: config.googleDriveTargetFolderIds,
@@ -97,6 +238,11 @@ export const createGoogleDriveClient = (
       refreshToken: config.googleRefreshToken,
     },
     request,
+    auth: {
+      fetchAccessToken,
+    },
+    folders,
+    files,
   };
 };
 
