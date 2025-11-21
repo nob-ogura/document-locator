@@ -7,6 +7,9 @@ import { createMockOpenAIClient } from "../openai-provider.ts";
 
 const MODES: CrawlerMode[] = ["auto", "full", "diff"];
 
+const normalizeArgv = (argv: string[]): string[] =>
+  argv.length > 2 && argv[2] === "--" ? [argv[0], argv[1], ...argv.slice(3)] : argv;
+
 const parseMode = (value: string): CrawlerMode => {
   const normalized = value.toLowerCase();
   if (MODES.includes(normalized as CrawlerMode)) {
@@ -140,4 +143,4 @@ program
     }
   });
 
-program.parse();
+await program.parseAsync(normalizeArgv(process.argv));

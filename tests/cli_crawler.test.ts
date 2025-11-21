@@ -78,6 +78,15 @@ describe("crawler CLI", () => {
     expect(log.context).toMatchObject({ mode: "full", limit: 2 });
   });
 
+  it("先頭に誤って入った '--' を無視してオプションを解釈する", () => {
+    const result = runCrawlerCli(["--", "--mode", "diff", "--limit", "5"], {});
+
+    expect(result.status).toBe(0);
+
+    const log = parseLogLine(result.stdout);
+    expect(log.context).toMatchObject({ mode: "diff", limit: 5 });
+  });
+
   it("必須環境変数が欠落していればエラー終了する", () => {
     const result = runCrawlerCli([], { SUPABASE_SERVICE_ROLE_KEY: undefined });
 

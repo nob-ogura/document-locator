@@ -148,8 +148,33 @@ type PdfParseFn = (dataBuffer: Buffer) => Promise<{ text?: string } | string>;
 const importPdfParse = async (): Promise<PdfParseFn> => {
   const mod = await import("pdf-parse");
   const fn = (mod as { default?: unknown }).default ?? (mod as unknown);
-  if (typeof fn !== "function") {
-    throw new Error("pdf-parse module did not export a callable function");
+
+  if (typeof fn === "function") {
+    return fn as PdfParseFn;
   }
-  return fn as PdfParseFn;
+
+  const PDFParseCtor = (mod as { PDFParse?: unknown }).PDFParse;
+  if (typeof PDFParseCtor === "function") {
+    return async (dataBuffer: Buffer) => {
+      const parser = new (
+        PDFParseCtor as new (params: {
+          data: Buffer;
+        }) => {
+          getText?: () => Promise<{ text?: string } | string>;
+          destroy?: () => Promise<void> | void;
+        }
+      )({ data: dataBuffer });
+
+      try {
+        const result = await parser.getText?.();
+        return result ?? "";
+      } finally {
+        if (typeof parser.destroy === "function") {
+          await parser.destroy();
+        }
+      }
+    };
+  }
+
+  throw new Error("pdf-parse module did not export a callable function");
 };

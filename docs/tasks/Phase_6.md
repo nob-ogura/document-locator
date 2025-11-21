@@ -2,6 +2,10 @@
 
 > 前提: フェーズ1–5の基盤・ラッパー・モックが揃っていること。実鍵利用は「実鍵・実環境利用計画」に従い、フェーズ6後半で少件数スモークを行う。
 
+### 実行例
+- 推奨: `pnpm crawler --mode diff -l 5`
+- 誤って `pnpm crawler -- --mode diff -l 5` のようにスクリプト直後に単独の `--` を入れても、CLI 側で先頭の `--` を無視するため同様に実行できる。
+
 ### 1. CLI エントリ実装（commander + env デフォルト）
 - `crawler --mode [auto|full|diff] --limit <n>` を実装し、未指定時は `CRAWLER_MODE` を採用、指定時は上書き。
 - 環境変数必須チェック（Design.md/Plan.md 準拠）、欠落時はエラー終了。
