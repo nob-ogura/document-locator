@@ -35,6 +35,33 @@ export type CrawlerDeps = {
   logger?: Logger;
 };
 
+const MAX_PARALLEL_FILE_PROCESSING = 5;
+
+const mapWithConcurrency = async <T, R>(
+  items: readonly T[],
+  concurrency: number,
+  worker: (item: T, index: number) => Promise<R>,
+): Promise<R[]> => {
+  if (items.length === 0) return [];
+
+  const limit = Math.max(1, concurrency);
+  const results: R[] = new Array(items.length);
+  let nextIndex = 0;
+
+  const runNext = async (): Promise<void> => {
+    while (nextIndex < items.length) {
+      const currentIndex = nextIndex;
+      nextIndex += 1;
+      results[currentIndex] = await worker(items[currentIndex], currentIndex);
+    }
+  };
+
+  const runners = Array.from({ length: Math.min(limit, items.length) }, () => runNext());
+  await Promise.all(runners);
+
+  return results;
+};
+
 const buildModifiedTimeFilter = (mode: ResolvedCrawlMode, syncState: DriveSyncStateRow | null) => {
   if (mode !== "diff") return undefined;
   return syncState?.drive_modified_at
@@ -200,27 +227,29 @@ export const extractDriveTexts = async (
   const { googleDrive } = enumeration.clients;
   const logger = options.deps?.logger ?? googleDrive.logger;
 
-  const extracted: ExtractedDriveFile[] = [];
-
-  for (const file of enumeration.processable) {
-    try {
-      const text = await extractTextOrSkip({
-        driveClient: googleDrive,
-        fileMeta: file,
-        logger,
-      });
-      extracted.push({ ...file, text });
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      logger?.info("text extraction failed; continuing", {
-        fileId: file.id,
-        fileName: file.name,
-        mimeType: file.mimeType,
-        error: message,
-      });
-      extracted.push({ ...file, text: null, error: message });
-    }
-  }
+  const extracted = await mapWithConcurrency(
+    enumeration.processable,
+    MAX_PARALLEL_FILE_PROCESSING,
+    async (file) => {
+      try {
+        const text = await extractTextOrSkip({
+          driveClient: googleDrive,
+          fileMeta: file,
+          logger,
+        });
+        return { ...file, text };
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        logger?.info("text extraction failed; continuing", {
+          fileId: file.id,
+          fileName: file.name,
+          mimeType: file.mimeType,
+          error: message,
+        });
+        return { ...file, text: null, error: message };
+      }
+    },
+  );
 
   return { ...enumeration, extracted };
 };
@@ -252,80 +281,80 @@ export const runAiPipeline = async (options: RunCrawlerOptions): Promise<RunAiPi
   const { openai } = extraction.clients;
   const logger = options.deps?.logger ?? openai.logger;
 
-  const processed: AiProcessedDriveFile[] = [];
+  const processed = await mapWithConcurrency(
+    extraction.extracted,
+    MAX_PARALLEL_FILE_PROCESSING,
+    async (file) => {
+      const text = file.text;
+      const hasText = typeof text === "string" && text.trim().length > 0;
 
-  for (const file of extraction.extracted) {
-    const text = file.text;
-    const hasText = typeof text === "string" && text.trim().length > 0;
+      if (!hasText) {
+        logger?.info("ai pipeline skipped: empty text", {
+          fileId: file.id,
+          fileName: file.name,
+          mimeType: file.mimeType,
+        });
 
-    if (!hasText) {
-      processed.push({
-        ...file,
-        summary: null,
-        keywords: null,
-        embedding: null,
-        aiError: file.error ?? "text is empty",
-      });
+        return {
+          ...file,
+          summary: null,
+          keywords: null,
+          embedding: null,
+          aiError: file.error ?? "text is empty",
+        };
+      }
 
-      logger?.info("ai pipeline skipped: empty text", {
-        fileId: file.id,
-        fileName: file.name,
-        mimeType: file.mimeType,
-      });
+      try {
+        const summary = await summarizeText({
+          openai,
+          text,
+          summaryMaxLength: options.config.summaryMaxLength,
+          logger,
+        });
 
-      continue;
-    }
+        const keywords = await extractKeywords({
+          openai,
+          text,
+          logger,
+        });
 
-    try {
-      const summary = await summarizeText({
-        openai,
-        text,
-        summaryMaxLength: options.config.summaryMaxLength,
-        logger,
-      });
+        const embeddingInput = buildEmbeddingInput({
+          summary,
+          keywords,
+          fileName: file.name ?? file.id ?? "unknown",
+        });
 
-      const keywords = await extractKeywords({
-        openai,
-        text,
-        logger,
-      });
+        const embedding = await generateEmbedding({
+          openai,
+          input: embeddingInput,
+        });
 
-      const embeddingInput = buildEmbeddingInput({
-        summary,
-        keywords,
-        fileName: file.name ?? file.id ?? "unknown",
-      });
+        return {
+          ...file,
+          summary,
+          keywords,
+          embedding,
+        };
+      } catch (error) {
+        const aiError = error instanceof Error ? error.message : String(error);
 
-      const embedding = await generateEmbedding({
-        openai,
-        input: embeddingInput,
-      });
+        logger?.info("ai pipeline failed; continuing", {
+          fileId: file.id,
+          fileName: file.name,
+          mimeType: file.mimeType,
+          error: aiError,
+        });
 
-      processed.push({
-        ...file,
-        summary,
-        keywords,
-        embedding,
-      });
-    } catch (error) {
-      const aiError = error instanceof Error ? error.message : String(error);
-
-      logger?.info("ai pipeline failed; continuing", {
-        fileId: file.id,
-        fileName: file.name,
-        mimeType: file.mimeType,
-        error: aiError,
-      });
-
-      processed.push({
-        ...file,
-        summary: null,
-        keywords: null,
-        embedding: null,
-        aiError,
-      });
-    }
-  }
+        return {
+          ...file,
+          summary: null,
+          keywords: null,
+          embedding: null,
+          aiError,
+        };
+      }
+    },
+  );
 
   return { ...extraction, processed };
 };
