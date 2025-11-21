@@ -3,7 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, type Mock, vi } from "vite
 import type { GoogleDriveClient } from "../src/clients.js";
 import { createGoogleDriveClient } from "../src/clients.js";
 import type { AppConfig } from "../src/env.js";
-import { fetchGoogleDocText } from "../src/text_extraction.js";
+import { extractTextOrSkip, fetchGoogleDocText } from "../src/text_extraction.js";
 
 const baseConfig: AppConfig = {
   crawlerMode: "diff",
@@ -21,6 +21,7 @@ const baseConfig: AppConfig = {
 
 const createDriveClient = (
   exportMock: Mock<GoogleDriveClient["files"]["export"]>,
+  getMock: Mock<GoogleDriveClient["files"]["get"]> = vi.fn(),
 ): GoogleDriveClient =>
   ({
     logger: {
@@ -37,7 +38,7 @@ const createDriveClient = (
     request: vi.fn(),
     auth: { fetchAccessToken: vi.fn() },
     folders: { ensureTargetsExist: vi.fn() },
-    files: { list: vi.fn(), export: exportMock, get: vi.fn() },
+    files: { list: vi.fn(), export: exportMock, get: getMock },
   }) satisfies GoogleDriveClient;
 
 describe("fetchGoogleDocText", () => {
@@ -118,6 +119,57 @@ describe("fetchGoogleDocText", () => {
     expect(logger.info).toHaveBeenCalledWith(
       "http retry",
       expect.objectContaining({ attempt: 1, status: 429, delayMs: 1000 }),
+    );
+  });
+});
+
+describe("extractTextOrSkip", () => {
+  it("非対応 MIME をスキップし、抽出処理を呼ばずにログを残す", async () => {
+    const exportMock = vi.fn() as Mock<GoogleDriveClient["files"]["export"]>;
+    const getMock = vi.fn() as Mock<GoogleDriveClient["files"]["get"]>;
+    const logger = {
+      debug: vi.fn(),
+      info: vi.fn(),
+      error: vi.fn(),
+    };
+
+    const driveClient = createDriveClient(exportMock, getMock);
+
+    const pngResult = await extractTextOrSkip({
+      driveClient,
+      fileMeta: { id: "img-1", mimeType: "image/png", name: "sample.png" },
+      logger,
+    });
+
+    const zipResult = await extractTextOrSkip({
+      driveClient,
+      fileMeta: { id: "zip-1", mimeType: "application/zip", name: "archive.zip" },
+      logger,
+    });
+
+    expect(pngResult).toBeNull();
+    expect(zipResult).toBeNull();
+    expect(exportMock).not.toHaveBeenCalled();
+    expect(getMock).not.toHaveBeenCalled();
+
+    expect(logger.info).toHaveBeenCalledTimes(2);
+    expect(logger.info).toHaveBeenNthCalledWith(
+      1,
+      "skip: unsupported mime_type",
+      expect.objectContaining({
+        mimeType: "image/png",
+        fileId: "img-1",
+        fileName: "sample.png",
+      }),
+    );
+    expect(logger.info).toHaveBeenNthCalledWith(
+      2,
+      "skip: unsupported mime_type",
+      expect.objectContaining({
+        mimeType: "application/zip",
+        fileId: "zip-1",
+        fileName: "archive.zip",
+      }),
     );
   });
 });

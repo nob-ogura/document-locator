@@ -46,6 +46,7 @@ const createSupabaseClient = (): SupabaseClient =>
 
 describe("listDriveFilesPaged", () => {
   afterEach(() => {
+    vi.useRealTimers();
     vi.restoreAllMocks();
   });
 
@@ -101,5 +102,51 @@ describe("listDriveFilesPaged", () => {
     const params = listMock.mock.calls[0]?.[0];
     expect(params?.pageSize).toBe(100);
     expect(params?.q).toBe("modifiedTime > '2024-09-01T00:00:00Z'");
+  });
+
+  it("429 応答を指数バックオフでリトライしてページングを継続する", async () => {
+    vi.useFakeTimers();
+
+    const listMock = vi
+      .fn<GoogleDriveClient["files"]["list"]>()
+      .mockResolvedValueOnce(new Response("rate limited", { status: 429 }))
+      .mockResolvedValueOnce(createListResponse([{ id: "file-ok" }]));
+
+    vi.spyOn(syncRepo, "getDriveSyncState").mockResolvedValue(null);
+
+    const logger = {
+      debug: vi.fn(),
+      info: vi.fn(),
+      error: vi.fn(),
+    };
+
+    const driveClient = createDriveClient(listMock);
+    const supabaseClient = createSupabaseClient();
+
+    const promise = listDriveFilesPaged({
+      driveClient,
+      supabaseClient,
+      mode: "full",
+      logger,
+    });
+
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(listMock).toHaveBeenCalledTimes(1);
+
+    await vi.advanceTimersByTimeAsync(999);
+    expect(listMock).toHaveBeenCalledTimes(1);
+
+    await vi.advanceTimersByTimeAsync(1);
+    expect(listMock).toHaveBeenCalledTimes(2);
+
+    const files = await promise;
+    expect(files.map((f) => f.id)).toEqual(["file-ok"]);
+
+    expect(logger.info).toHaveBeenCalledWith(
+      "http retry",
+      expect.objectContaining({ attempt: 1, status: 429, delayMs: 1000 }),
+    );
   });
 });

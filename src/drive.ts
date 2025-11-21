@@ -1,5 +1,6 @@
 import type { GoogleDriveClient, GoogleDriveFilesListParams, SupabaseClient } from "./clients.js";
 import { type DriveSyncStateRow, getDriveSyncState } from "./drive_sync_state_repository.js";
+import { isRetryableStatus } from "./http.js";
 import type { Logger } from "./logger.js";
 
 export type CrawlMode = "auto" | "full" | "diff";
@@ -28,6 +29,10 @@ type ListDriveFilesPagedOptions = {
 const DEFAULT_PAGE_SIZE = 100;
 const DEFAULT_FIELDS = "files(id,name,mimeType,modifiedTime),nextPageToken";
 const DEFAULT_ORDER = "modifiedTime asc";
+const DEFAULT_MAX_RETRIES = 5;
+const DEFAULT_BASE_DELAY_MS = 1000;
+
+const sleep = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms));
 
 const ensureOk = async (response: Response): Promise<void> => {
   if (response.ok) return;
@@ -48,6 +53,34 @@ const ensureOk = async (response: Response): Promise<void> => {
 const parseListResponse = async (response: Response): Promise<FilesListResponse> => {
   const data = (await response.json()) as unknown;
   return data as FilesListResponse;
+};
+
+const listWithBackoff = async (
+  driveClient: GoogleDriveClient,
+  params: GoogleDriveFilesListParams,
+  logger?: Logger,
+): Promise<Response> => {
+  for (let attempt = 1; attempt <= DEFAULT_MAX_RETRIES; attempt += 1) {
+    const response = await driveClient.files.list(params);
+
+    if (response.ok) {
+      return response;
+    }
+
+    if (!isRetryableStatus(response.status)) {
+      await ensureOk(response); // throws
+    }
+
+    if (attempt >= DEFAULT_MAX_RETRIES) {
+      await ensureOk(response); // throws after including response body when available
+    }
+
+    const delayMs = DEFAULT_BASE_DELAY_MS * 2 ** (attempt - 1);
+    logger?.info("http retry", { attempt, status: response.status, delayMs });
+    await sleep(delayMs);
+  }
+
+  throw new Error("Drive files.list retry attempts exhausted unexpectedly");
 };
 
 const resolveMode = async (
@@ -119,6 +152,8 @@ export const listDriveFilesPaged = async (
     fields = DEFAULT_FIELDS,
   } = options;
 
+  const effectiveLogger = logger ?? driveClient.logger;
+
   const { effectiveMode, syncState } = await resolveMode(mode, supabaseClient, logger);
   const modifiedFilter = buildModifiedTimeFilter(effectiveMode, syncState);
 
@@ -127,7 +162,7 @@ export const listDriveFilesPaged = async (
 
   do {
     const params = buildListParams(modifiedFilter, pageSize, pageToken, fields);
-    const response = await driveClient.files.list(params);
+    const response = await listWithBackoff(driveClient, params, effectiveLogger);
 
     await ensureOk(response);
     const parsed = await parseListResponse(response);

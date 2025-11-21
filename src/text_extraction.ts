@@ -1,6 +1,6 @@
 import pdfParse from "pdf-parse";
-
 import type { GoogleDriveClient } from "./clients.js";
+import type { DriveFileEntry } from "./drive.js";
 import type { Logger } from "./logger.js";
 
 type FetchGoogleDocTextOptions = {
@@ -87,3 +87,61 @@ export const fetchPdfText = async (options: FetchPdfTextOptions): Promise<string
 };
 
 export type { FetchGoogleDocTextOptions, FetchPdfTextOptions };
+
+type MimeHandler = (params: {
+  driveClient: GoogleDriveClient;
+  fileId: string;
+  accessToken?: string;
+  logger?: Logger;
+}) => Promise<string>;
+
+const MIME_HANDLERS: Record<string, MimeHandler> = {
+  "application/vnd.google-apps.document": ({ driveClient, fileId, accessToken, logger }) =>
+    fetchGoogleDocText({ driveClient, fileId, accessToken, logger }),
+  "application/pdf": ({ driveClient, fileId, accessToken, logger }) =>
+    fetchPdfText({ driveClient, fileId, accessToken, logger }),
+};
+
+export const isTextSupportedMime = (mimeType: string | undefined): boolean =>
+  Boolean(mimeType && MIME_HANDLERS[mimeType]);
+
+export type ExtractTextOrSkipOptions = {
+  driveClient: GoogleDriveClient;
+  fileMeta: DriveFileEntry;
+  accessToken?: string;
+  logger?: Logger;
+};
+
+/**
+ * テキスト抽出可能な MIME のみを処理し、それ以外はスキップとしてログに記録する。
+ * サポート対象: Google ドキュメント, PDF
+ */
+export const extractTextOrSkip = async (
+  options: ExtractTextOrSkipOptions,
+): Promise<string | null> => {
+  const { driveClient, fileMeta, accessToken, logger } = options;
+  const mimeType = fileMeta.mimeType;
+  const handler = mimeType ? MIME_HANDLERS[mimeType] : undefined;
+  const fileId = fileMeta.id;
+  const effectiveLogger = logger ?? driveClient.logger;
+
+  if (!handler) {
+    effectiveLogger?.info("skip: unsupported mime_type", {
+      mimeType,
+      fileId,
+      fileName: fileMeta.name,
+    });
+    return null;
+  }
+
+  if (!fileId) {
+    throw new Error("file id is required for text extraction");
+  }
+
+  return handler({
+    driveClient,
+    fileId,
+    accessToken,
+    logger: effectiveLogger,
+  });
+};

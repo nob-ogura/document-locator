@@ -17,7 +17,7 @@ export type FetchWithRetryOptions = RequestInit & {
   baseDelayMs?: number;
 };
 
-const isRetryableStatus = (status: number): boolean =>
+export const isRetryableStatus = (status: number): boolean =>
   status === 429 || (status >= 500 && status < 600);
 
 const sleep = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms));
