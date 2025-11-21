@@ -3,8 +3,8 @@ import type {
   OpenAIChatResponse,
   OpenAIClient,
   OpenAIEmbeddingData,
-} from "./clients.js";
-import type { Logger } from "./logger.js";
+} from "./clients.ts";
+import type { Logger } from "./logger.ts";
 
 type ChatClient = Pick<OpenAIClient, "chat">;
 type EmbeddingsClient = Pick<OpenAIClient, "embeddings">;

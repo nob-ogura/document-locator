@@ -1,7 +1,7 @@
 import pdfParse from "pdf-parse";
-import type { GoogleDriveClient } from "./clients.js";
-import type { DriveFileEntry } from "./drive.js";
-import type { Logger } from "./logger.js";
+import type { GoogleDriveClient } from "./clients.ts";
+import type { DriveFileEntry } from "./drive.ts";
+import type { Logger } from "./logger.ts";
 
 type FetchGoogleDocTextOptions = {
   driveClient: GoogleDriveClient;

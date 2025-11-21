@@ -1,6 +1,6 @@
-import type { AppConfig } from "./env.js";
-import { type FetchWithRetryOptions, fetchWithRetry } from "./http.js";
-import { createLogger, type Logger } from "./logger.js";
+import type { AppConfig } from "./env.ts";
+import { type FetchWithRetryOptions, fetchWithRetry } from "./http.ts";
+import { createLogger, type Logger } from "./logger.ts";
 
 type RequestInfo = Parameters<typeof fetch>[0];
 type FetchLike = (input: RequestInfo, init?: RequestInit) => Promise<Response>;

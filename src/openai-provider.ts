@@ -5,9 +5,9 @@ import {
   type OpenAIClient,
   type OpenAIEmbeddingRequest,
   type OpenAIEmbeddingResponse,
-} from "./clients.js";
-import type { AppConfig } from "./env.js";
-import { createLogger, type Logger } from "./logger.js";
+} from "./clients.ts";
+import type { AppConfig } from "./env.ts";
+import { createLogger, type Logger } from "./logger.ts";
 
 const MOCK_EMBEDDING_DIMENSION = 1536;
 const MOCK_KEYWORDS = ["mock", "openai", "ci"];

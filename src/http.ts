@@ -1,4 +1,4 @@
-import type { Logger } from "./logger.js";
+import type { Logger } from "./logger.ts";
 
 // Compatible with the node-global `fetch` signature without relying on DOM lib types.
 type RequestInfo = Parameters<typeof fetch>[0];

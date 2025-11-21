@@ -1,4 +1,4 @@
-import type { SupabaseClient } from "./clients.js";
+import type { SupabaseClient } from "./clients.ts";
 
 export type DriveSyncStateRow = {
   id: string;

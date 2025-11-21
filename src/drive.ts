@@ -1,7 +1,7 @@
-import type { GoogleDriveClient, GoogleDriveFilesListParams, SupabaseClient } from "./clients.js";
-import { type DriveSyncStateRow, getDriveSyncState } from "./drive_sync_state_repository.js";
-import { isRetryableStatus } from "./http.js";
-import type { Logger } from "./logger.js";
+import type { GoogleDriveClient, GoogleDriveFilesListParams, SupabaseClient } from "./clients.ts";
+import { type DriveSyncStateRow, getDriveSyncState } from "./drive_sync_state_repository.ts";
+import { isRetryableStatus } from "./http.ts";
+import type { Logger } from "./logger.ts";
 
 export type CrawlMode = "auto" | "full" | "diff";
 
