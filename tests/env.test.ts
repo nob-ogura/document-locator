@@ -32,4 +32,10 @@ describe("loadEnv", () => {
 
     expect(() => loadEnv(env)).toThrow(/SUPABASE_SERVICE_ROLE_KEY/);
   });
+
+  it("CRAWLER_MODE は auto|full|diff のみを受け付ける", () => {
+    const env: NodeJS.ProcessEnv = { ...baseEnv, CRAWLER_MODE: "invalid" };
+
+    expect(() => loadEnv(env)).toThrow(/CRAWLER_MODE/);
+  });
 });

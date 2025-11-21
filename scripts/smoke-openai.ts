@@ -51,7 +51,7 @@ const toPositiveInteger = (value: string | undefined, fallback: number): number 
 
 const buildConfig = (): AppConfig => {
   return {
-    crawlerMode: "smoke-openai",
+    crawlerMode: "diff",
     searchMaxLoopCount: 1,
     summaryMaxLength: toPositiveInteger(process.env.SUMMARY_MAX_LENGTH, 400),
     googleClientId: process.env.GOOGLE_CLIENT_ID ?? "mock-client-id",

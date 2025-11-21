@@ -1,21 +1,46 @@
-import { Command } from "commander";
+import { Command, InvalidArgumentError } from "commander";
+
+import { type CrawlerMode, loadEnv } from "../env.ts";
+import { createLogger } from "../logger.ts";
+
+const MODES: CrawlerMode[] = ["auto", "full", "diff"];
+
+const parseMode = (value: string): CrawlerMode => {
+  const normalized = value.toLowerCase();
+  if (MODES.includes(normalized as CrawlerMode)) {
+    return normalized as CrawlerMode;
+  }
+  throw new InvalidArgumentError(`mode must be one of: ${MODES.join(", ")}`);
+};
+
+const parseLimit = (value: string): number => {
+  const parsed = Number.parseInt(value, 10);
+  if (!Number.isFinite(parsed) || parsed <= 0) {
+    throw new InvalidArgumentError("limit must be a positive integer");
+  }
+  return parsed;
+};
 
 const program = new Command();
 
 program
   .name("crawler")
-  .description("Crawl Google Drive content and sync metadata into the local index (stub).")
-  .option("-m, --mode <mode>", "crawl mode: auto | full | diff", "auto")
-  .option("-l, --limit <number>", "limit number of files processed in one run", (value) =>
-    Number.parseInt(value, 10),
-  )
-  .option("--dry-run", "run without writing to external services")
-  .action((options) => {
-    const limitText = Number.isFinite(options.limit) ? ` with limit ${options.limit}` : "";
+  .description("Crawl Google Drive content and sync metadata into the local index.")
+  .option<CrawlerMode>("-m, --mode <mode>", "crawl mode: auto | full | diff", parseMode)
+  .option<number>("-l, --limit <number>", "limit number of files processed in one run", parseLimit)
+  .action((options: { mode?: CrawlerMode; limit?: number }) => {
+    try {
+      const config = loadEnv();
+      const mode: CrawlerMode = options.mode ?? config.crawlerMode;
+      const limit = options.limit;
 
-    console.log(
-      `crawler stub running in ${options.mode} mode${limitText}${options.dryRun ? " (dry-run)" : ""}`,
-    );
+      const logger = createLogger(config.logLevel);
+      logger.info("crawler: starting", { mode, limit: limit ?? null });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      console.error(message);
+      process.exitCode = 1;
+    }
   });
 
 program.parse();

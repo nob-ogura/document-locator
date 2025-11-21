@@ -3,8 +3,10 @@ import { resolve } from "node:path";
 
 import type { LogLevel } from "./logger.js";
 
+export type CrawlerMode = "auto" | "full" | "diff";
+
 export type AppConfig = {
-  crawlerMode: string;
+  crawlerMode: CrawlerMode;
   searchMaxLoopCount: number;
   summaryMaxLength: number;
   googleClientId: string;
@@ -20,6 +22,7 @@ export type AppConfig = {
 };
 
 const DEFAULT_LOG_LEVEL: LogLevel = "info";
+const CRAWLER_MODES: CrawlerMode[] = ["auto", "full", "diff"];
 
 const REQUIRED_KEYS: ReadonlyArray<keyof NodeJS.ProcessEnv> = [
   "CRAWLER_MODE",
@@ -94,6 +97,11 @@ export function loadEnv(env: NodeJS.ProcessEnv = process.env): AppConfig {
     throw new Error(`LOG_LEVEL must be one of: ${LOG_LEVELS.join(", ")}`);
   }
 
+  const normalizedCrawlerMode = mergedEnv.CRAWLER_MODE.toLowerCase();
+  if (!CRAWLER_MODES.includes(normalizedCrawlerMode as CrawlerMode)) {
+    throw new Error(`CRAWLER_MODE must be one of: ${CRAWLER_MODES.join(", ")}`);
+  }
+
   const targetIds = mergedEnv.GOOGLE_DRIVE_TARGET_FOLDER_IDS.split(",")
     .map((value) => value.trim())
     .filter((value) => value.length > 0);
@@ -103,7 +111,7 @@ export function loadEnv(env: NodeJS.ProcessEnv = process.env): AppConfig {
   }
 
   return {
-    crawlerMode: mergedEnv.CRAWLER_MODE,
+    crawlerMode: normalizedCrawlerMode as CrawlerMode,
     searchMaxLoopCount,
     summaryMaxLength,
     googleClientId: mergedEnv.GOOGLE_CLIENT_ID,
