@@ -1,4 +1,4 @@
-import type { GoogleDriveClient, SupabaseClient } from "./clients.ts";
+import type { GoogleDriveClient, OpenAIClient, SupabaseClient } from "./clients.ts";
 import { createExternalClients } from "./clients.ts";
 import { type CrawlMode, type DriveFileEntry, listDriveFilesPaged } from "./drive.ts";
 import type { DriveSyncStateRow } from "./drive_sync_state_repository.ts";
@@ -6,6 +6,12 @@ import { getDriveSyncState } from "./drive_sync_state_repository.ts";
 import type { AppConfig, CrawlerMode } from "./env.ts";
 import { createLogger, type Logger } from "./logger.ts";
 import { isTextSupportedMime } from "./mime.ts";
+import {
+  buildEmbeddingInput,
+  extractKeywords,
+  generateEmbedding,
+  summarizeText,
+} from "./openai.ts";
 import { extractTextOrSkip } from "./text_extraction.ts";
 
 export type ResolvedCrawlMode = Exclude<CrawlMode, "auto">;
@@ -20,6 +26,7 @@ export type CrawlContext = {
 export type CrawlerDeps = {
   googleDrive?: GoogleDriveClient;
   supabase?: SupabaseClient;
+  openai?: OpenAIClient;
   logger?: Logger;
 };
 
@@ -96,6 +103,7 @@ export type RunCrawlerResult = CrawlContext & {
   clients: {
     googleDrive: GoogleDriveClient;
     supabase: SupabaseClient;
+    openai: OpenAIClient;
   };
 };
 
@@ -107,6 +115,7 @@ export const runCrawler = async (options: RunCrawlerOptions): Promise<RunCrawler
   const defaultClients = createExternalClients(config, { logger });
   const supabase = deps?.supabase ?? defaultClients.supabase;
   const googleDrive = deps?.googleDrive ?? defaultClients.googleDrive;
+  const openai = deps?.openai ?? defaultClients.openai;
 
   const context = await resolveCrawlContext(requestedMode, supabase, logger);
 
@@ -116,6 +125,7 @@ export const runCrawler = async (options: RunCrawlerOptions): Promise<RunCrawler
     clients: {
       googleDrive,
       supabase,
+      openai,
     },
   };
 };
@@ -208,4 +218,98 @@ export const extractDriveTexts = async (
   }
 
   return { ...enumeration, extracted };
+};
+
+export type AiProcessedDriveFile = ExtractedDriveFile & {
+  summary: string | null;
+  keywords: string[] | null;
+  embedding: number[] | null;
+  aiError?: string;
+};
+
+export type RunAiPipelineResult = ExtractDriveTextsResult & {
+  processed: AiProcessedDriveFile[];
+};
+
+export const runAiPipeline = async (options: RunCrawlerOptions): Promise<RunAiPipelineResult> => {
+  const extraction = await extractDriveTexts(options);
+  const { openai } = extraction.clients;
+  const logger = options.deps?.logger ?? openai.logger;
+
+  const processed: AiProcessedDriveFile[] = [];
+
+  for (const file of extraction.extracted) {
+    const text = file.text;
+    const hasText = typeof text === "string" && text.trim().length > 0;
+
+    if (!hasText) {
+      processed.push({
+        ...file,
+        summary: null,
+        keywords: null,
+        embedding: null,
+        aiError: file.error ?? "text is empty",
+      });
+
+      logger?.info("ai pipeline skipped: empty text", {
+        fileId: file.id,
+        fileName: file.name,
+        mimeType: file.mimeType,
+      });
+
+      continue;
+    }
+
+    try {
+      const summary = await summarizeText({
+        openai,
+        text,
+        summaryMaxLength: options.config.summaryMaxLength,
+        logger,
+      });
+
+      const keywords = await extractKeywords({
+        openai,
+        text,
+        logger,
+      });
+
+      const embeddingInput = buildEmbeddingInput({
+        summary,
+        keywords,
+        fileName: file.name ?? file.id ?? "unknown",
+      });
+
+      const embedding = await generateEmbedding({
+        openai,
+        input: embeddingInput,
+      });
+
+      processed.push({
+        ...file,
+        summary,
+        keywords,
+        embedding,
+      });
+    } catch (error) {
+      const aiError = error instanceof Error ? error.message : String(error);
+
+      logger?.info("ai pipeline failed; continuing", {
+        fileId: file.id,
+        fileName: file.name,
+        mimeType: file.mimeType,
+        error: aiError,
+      });
+
+      processed.push({
+        ...file,
+        summary: null,
+        keywords: null,
+        embedding: null,
+        aiError,
+      });
+    }
+  }
+
+  return { ...extraction, processed };
 };
