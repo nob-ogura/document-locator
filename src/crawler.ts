@@ -1,8 +1,12 @@
 import type { GoogleDriveClient, OpenAIClient, SupabaseClient } from "./clients.ts";
 import { createExternalClients } from "./clients.ts";
 import { type CrawlMode, type DriveFileEntry, listDriveFilesPaged } from "./drive.ts";
+import {
+  type DriveFileIndexUpsertRow,
+  upsertDriveFileIndex,
+} from "./drive_file_index_repository.ts";
 import type { DriveSyncStateRow } from "./drive_sync_state_repository.ts";
-import { getDriveSyncState } from "./drive_sync_state_repository.ts";
+import { getDriveSyncState, upsertDriveSyncState } from "./drive_sync_state_repository.ts";
 import type { AppConfig, CrawlerMode } from "./env.ts";
 import { createLogger, type Logger } from "./logger.ts";
 import { isTextSupportedMime } from "./mime.ts";
@@ -13,6 +17,7 @@ import {
   summarizeText,
 } from "./openai.ts";
 import { extractTextOrSkip } from "./text_extraction.ts";
+import { isAfter } from "./time.ts";
 
 export type ResolvedCrawlMode = Exclude<CrawlMode, "auto">;
 
@@ -231,6 +236,17 @@ export type RunAiPipelineResult = ExtractDriveTextsResult & {
   processed: AiProcessedDriveFile[];
 };
 
+export type SupabaseUpsertFailure = {
+  fileId: string;
+  error: string;
+};
+
+export type SyncSupabaseResult = RunAiPipelineResult & {
+  upsertedCount: number;
+  failedUpserts: SupabaseUpsertFailure[];
+  latestDriveModifiedAt: string | null;
+};
+
 export const runAiPipeline = async (options: RunCrawlerOptions): Promise<RunAiPipelineResult> => {
   const extraction = await extractDriveTexts(options);
   const { openai } = extraction.clients;
@@ -312,4 +328,101 @@ export const runAiPipeline = async (options: RunCrawlerOptions): Promise<RunAiPi
   }
 
   return { ...extraction, processed };
+};
+
+const toDriveFileIndexRow = (file: AiProcessedDriveFile): DriveFileIndexUpsertRow | null => {
+  if (!file.id || !file.modifiedTime || !file.mimeType) return null;
+  if (typeof file.summary !== "string" || !Array.isArray(file.embedding)) return null;
+
+  return {
+    file_id: file.id,
+    file_name: file.name ?? file.id,
+    summary: file.summary,
+    keywords: file.keywords ?? null,
+    embedding: file.embedding,
+    drive_modified_at: file.modifiedTime,
+    mime_type: file.mimeType,
+  } satisfies DriveFileIndexUpsertRow;
+};
+
+const latestModifiedAt = (rows: DriveFileIndexUpsertRow[]): string | null =>
+  rows.reduce<string | null>((latest, row) => {
+    if (!latest) return row.drive_modified_at;
+    return isAfter(row.drive_modified_at, latest) ? row.drive_modified_at : latest;
+  }, null);
+
+export const upsertProcessedFiles = async (
+  processed: AiProcessedDriveFile[],
+  supabase: SupabaseClient,
+  logger?: Logger,
+): Promise<{
+  upsertedCount: number;
+  failedUpserts: SupabaseUpsertFailure[];
+  latestDriveModifiedAt: string | null;
+}> => {
+  const rows: DriveFileIndexUpsertRow[] = [];
+
+  for (const file of processed) {
+    const row = toDriveFileIndexRow(file);
+    if (row) {
+      rows.push(row);
+      continue;
+    }
+
+    logger?.info("supabase upsert skipped: missing data", {
+      fileId: file.id ?? null,
+      hasSummary: typeof file.summary === "string",
+      hasEmbedding: Array.isArray(file.embedding),
+      mimeType: file.mimeType ?? null,
+      modifiedTime: file.modifiedTime ?? null,
+    });
+  }
+
+  if (rows.length === 0) {
+    return { upsertedCount: 0, failedUpserts: [], latestDriveModifiedAt: null };
+  }
+
+  const failedUpserts: SupabaseUpsertFailure[] = [];
+  const succeeded: DriveFileIndexUpsertRow[] = [];
+
+  for (const row of rows) {
+    try {
+      await upsertDriveFileIndex(supabase, [row]);
+      succeeded.push(row);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      failedUpserts.push({ fileId: row.file_id, error: message });
+      logger?.error("supabase upsert failed", { fileId: row.file_id, error: message });
+    }
+  }
+
+  if (failedUpserts.length > 0) {
+    throw new Error(`Supabase upsert failed for ${failedUpserts.length} file(s)`);
+  }
+
+  const latest = latestModifiedAt(succeeded);
+  if (latest) {
+    await upsertDriveSyncState(supabase, latest);
+  }
+
+  return {
+    upsertedCount: succeeded.length,
+    failedUpserts,
+    latestDriveModifiedAt: latest ?? null,
+  };
+};
+
+export const syncSupabaseIndex = async (
+  options: RunCrawlerOptions,
+): Promise<SyncSupabaseResult> => {
+  const aiResult = await runAiPipeline(options);
+  const { supabase } = aiResult.clients;
+  const logger = options.deps?.logger ?? supabase.logger;
+
+  const stats = await upsertProcessedFiles(aiResult.processed, supabase, logger);
+
+  return {
+    ...aiResult,
+    ...stats,
+  } satisfies SyncSupabaseResult;
 };
