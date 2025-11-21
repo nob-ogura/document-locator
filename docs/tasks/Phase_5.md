@@ -69,4 +69,6 @@ Scenario: CI では常にモックに切り替わる
   Given CI=true が設定された環境で summarizeText を呼び出す
   Then OpenAI への実リクエストは送られずモックレスポンスが返る
   And 実鍵なしでもテストが通り、実行ログに "mock openai" など明示的な文言が含まれる
+
+補足: 手動スモークおよびモック切替の実行手順は `docs/runbooks/openai-smoke.md` を参照。
 ```
