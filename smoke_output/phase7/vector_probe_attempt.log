@@ -1,0 +1,11 @@
+# 2025-11-21 Supabase vector search probe sweep (embedding via text-embedding-3-small)
+Input text: 就業規則 在宅勤務 見積書 改訂
+Requests were sent to /rest/v1/rpc/match_drive_file_index with match_count=20 and probes in [8,10,16,24].
+
+Unexpected result: the RPC is missing in the Supabase schema.
+
+Responses:
+{ probes: 8, durationMs: 1412.251667, error: true, httpStatus: 404, message: "Could not find the function public.match_drive_file_index(filter_file_ids, match_count, probes, query_embedding) in the schema cache." }
+{ probes: 10, durationMs: 548.876, error: true, httpStatus: 404, message: "Could not find the function public.match_drive_file_index(filter_file_ids, match_count, probes, query_embedding) in the schema cache." }
+{ probes: 16, durationMs: 208.43616699999984, error: true, httpStatus: 404, message: "Could not find the function public.match_drive_file_index(filter_file_ids, match_count, probes, query_embedding) in the schema cache." }
+{ probes: 24, durationMs: 462.07191699999976, error: true, httpStatus: 404, message: "Could not find the function public.match_drive_file_index(filter_file_ids, match_count, probes, query_embedding) in the schema cache." }

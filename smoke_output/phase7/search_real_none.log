@@ -1,0 +1,15 @@
+# 2025-11-21 pnpm run search -- "テストクエリ" (LOG_LEVEL=debug, .env.production)
+{"level":"info","message":"search: starting","context":{"query":"テストクエリ","after":null,"before":null,"mime":null,"loops":10}}
+{"level":"info","message":"live openai mode enabled","context":{"organization":"default"}}
+{"level":"debug","message":"openai usage","context":{"endpoint":"chat","model":"gpt-4o-mini","promptTokens":40,"completionTokens":9,"totalTokens":49}}
+{"level":"info","message":"search: keyword extraction failed; falling back to raw query","context":{"error":"OpenAI keyword response could not be normalized to 3-5 keywords"}}
+{"level":"debug","message":"google drive: refreshed access token"}
+{"level":"debug","message":"google drive request","context":{"method":"GET","url":"https://www.googleapis.com/drive/v3/files?q=%28%271OtezWxz3aItaNxPMXqKUD4Ujx7tRQGk2%27+in+parents%29+and+%28%28%271OtezWxz3aItaNxPMXqKUD4Ujx7tRQGk2%27+in+parents%29+and+%28trashed+%3D+false+and+fullText+contains+%27%E3%83%86%E3%82%B9%E3%83%88%E3%82%AF%E3%82%A8%E3%83%AA%27%29%29&fields=files%28id%2Cname%2CmimeType%2CmodifiedTime%29%2CnextPageToken&pageSize=100&includeItemsFromAllDrives=true&supportsAllDrives=true"}}
+{"level":"debug","message":"drive search completed","context":{"query":"('1OtezWxz3aItaNxPMXqKUD4Ujx7tRQGk2' in parents) and (trashed = false and fullText contains 'テストクエリ')","files":0}}
+{"level":"info","message":"search: initial drive search finished","context":{"keywords":0,"driveQuery":"('1OtezWxz3aItaNxPMXqKUD4Ujx7tRQGk2' in parents) and (trashed = false and fullText contains 'テストクエリ')","hits":0}}
+{"level":"info","message":"search: no drive ids to intersect","context":{"candidates":0,"hits":0}}
+{"level":"info","message":"search: hit count evaluated","context":{"iteration":1,"hitCount":0,"bucket":"none","driveResults":0}}
+{"level":"info","message":"search: branching outcome","context":{"keywordCount":0,"driveQuery":"('1OtezWxz3aItaNxPMXqKUD4Ujx7tRQGk2' in parents) and (trashed = false and fullText contains 'テストクエリ')","hits":0,"bucket":"none","branch":"none->none","iteration":1,"retries":0,"loopLimitReached":true,"mock":false,"vectorApplied":false,"finalBucket":"none","reranked":false}}
+keywords: (fallback to raw query)
+hits: 0 (bucket=none)
+見つかりませんでした

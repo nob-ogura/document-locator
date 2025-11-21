@@ -1,0 +1,36 @@
+# 2025-11-21 pnpm run search -- "御見積書" (LOG_LEVEL=debug, .env.production)
+{"level":"info","message":"search: starting","context":{"query":"御見積書","after":null,"before":null,"mime":null,"loops":10}}
+{"level":"info","message":"live openai mode enabled","context":{"organization":"default"}}
+{"level":"debug","message":"openai usage","context":{"endpoint":"chat","model":"gpt-4o-mini","promptTokens":39,"completionTokens":24,"totalTokens":63}}
+{"level":"info","message":"search: keywords extracted","context":{"count":5}}
+{"level":"debug","message":"google drive: refreshed access token"}
+{"level":"debug","message":"google drive request","context":{"method":"GET","url":"https://www.googleapis.com/drive/v3/files?q=%28%271OtezWxz3aItaNxPMXqKUD4Ujx7tRQGk2%27+in+parents%29+and+%28%28%271OtezWxz3aItaNxPMXqKUD4Ujx7tRQGk2%27+in+parents%29+and+%28trashed+%3D+false+and+fullText+contains+%27%E5%BE%A1%E8%A6%8B%E7%A9%8D%E6%9B%B8%27+and+fullText+contains+%27%E8%A6%8B%E7%A9%8D%27+and+fullText+contains+%27%E6%9B%B8%E9%A1%9E%27+and+fullText+contains+%27%E3%83%93%E3%82%B8%E3%83%8D%E3%82%B9%27+and+fullText+contains+%27%E6%97%A5%E6%9C%AC%E8%AA%9E%27%29%29&fields=files%28id%2Cname%2CmimeType%2CmodifiedTime%29%2CnextPageToken&pageSize=100&includeItemsFromAllDrives=true&supportsAllDrives=true"}}
+{"level":"debug","message":"drive search completed","context":{"query":"('1OtezWxz3aItaNxPMXqKUD4Ujx7tRQGk2' in parents) and (trashed = false and fullText contains '御見積書' and fullText contains '見積' and fullText contains '書類' and fullText contains 'ビジネス' and fullText contains '日本語')","files":0}}
+{"level":"info","message":"search: initial drive search finished","context":{"keywords":5,"driveQuery":"('1OtezWxz3aItaNxPMXqKUD4Ujx7tRQGk2' in parents) and (trashed = false and fullText contains '御見積書' and fullText contains '見積' and fullText contains '書類' and fullText contains 'ビジネス' and fullText contains '日本語')","hits":0}}
+{"level":"info","message":"search: no drive ids to intersect","context":{"candidates":0,"hits":0}}
+{"level":"info","message":"search: hit count evaluated","context":{"iteration":1,"hitCount":0,"bucket":"none","driveResults":0}}
+{"level":"debug","message":"openai usage","context":{"endpoint":"chat","model":"gpt-4o-mini","promptTokens":107,"completionTokens":31,"totalTokens":138}}
+{"level":"info","message":"search: retrying with relaxed constraints","context":{"iteration":2,"keywords":3,"filtersChanged":false}}
+{"level":"info","message":"search: using override keywords","context":{"count":3}}
+{"level":"debug","message":"google drive: refreshed access token"}
+{"level":"debug","message":"google drive request","context":{"method":"GET","url":"https://www.googleapis.com/drive/v3/files?q=%28%271OtezWxz3aItaNxPMXqKUD4Ujx7tRQGk2%27+in+parents%29+and+%28%28%271OtezWxz3aItaNxPMXqKUD4Ujx7tRQGk2%27+in+parents%29+and+%28trashed+%3D+false+and+fullText+contains+%27%E5%BE%A1%E8%A6%8B%E7%A9%8D%E6%9B%B8%27+and+fullText+contains+%27%E8%A6%8B%E7%A9%8D%27+and+fullText+contains+%27%E3%83%93%E3%82%B8%E3%83%8D%E3%82%B9%27%29%29&fields=files%28id%2Cname%2CmimeType%2CmodifiedTime%29%2CnextPageToken&pageSize=100&includeItemsFromAllDrives=true&supportsAllDrives=true"}}
+{"level":"debug","message":"drive search completed","context":{"query":"('1OtezWxz3aItaNxPMXqKUD4Ujx7tRQGk2' in parents) and (trashed = false and fullText contains '御見積書' and fullText contains '見積' and fullText contains 'ビジネス')","files":0}}
+{"level":"info","message":"search: initial drive search finished","context":{"keywords":3,"driveQuery":"('1OtezWxz3aItaNxPMXqKUD4Ujx7tRQGk2' in parents) and (trashed = false and fullText contains '御見積書' and fullText contains '見積' and fullText contains 'ビジネス')","hits":0}}
+{"level":"info","message":"search: no drive ids to intersect","context":{"candidates":0,"hits":0}}
+{"level":"info","message":"search: hit count evaluated","context":{"iteration":2,"hitCount":0,"bucket":"none","driveResults":0}}
+{"level":"debug","message":"openai usage","context":{"endpoint":"chat","model":"gpt-4o-mini","promptTokens":101,"completionTokens":26,"totalTokens":127}}
+{"level":"info","message":"search: retrying with relaxed constraints","context":{"iteration":3,"keywords":2,"filtersChanged":false}}
+{"level":"info","message":"search: using override keywords","context":{"count":2}}
+{"level":"debug","message":"google drive: refreshed access token"}
+{"level":"debug","message":"google drive request","context":{"method":"GET","url":"https://www.googleapis.com/drive/v3/files?q=%28%271OtezWxz3aItaNxPMXqKUD4Ujx7tRQGk2%27+in+parents%29+and+%28%28%271OtezWxz3aItaNxPMXqKUD4Ujx7tRQGk2%27+in+parents%29+and+%28trashed+%3D+false+and+fullText+contains+%27%E5%BE%A1%E8%A6%8B%E7%A9%8D%E6%9B%B8%27+and+fullText+contains+%27%E8%A6%8B%E7%A9%8D%27%29%29&fields=files%28id%2Cname%2CmimeType%2CmodifiedTime%29%2CnextPageToken&pageSize=100&includeItemsFromAllDrives=true&supportsAllDrives=true"}}
+{"level":"debug","message":"drive search completed","context":{"query":"('1OtezWxz3aItaNxPMXqKUD4Ujx7tRQGk2' in parents) and (trashed = false and fullText contains '御見積書' and fullText contains '見積')","files":1}}
+{"level":"info","message":"search: initial drive search finished","context":{"keywords":2,"driveQuery":"('1OtezWxz3aItaNxPMXqKUD4Ujx7tRQGk2' in parents) and (trashed = false and fullText contains '御見積書' and fullText contains '見積')","hits":1}}
+{"level":"debug","message":"supabase request","context":{"method":"GET","url":"https://wjofthwiqhzmimknfiil.supabase.co/rest/v1/drive_file_index?select=*&file_id=in.%28%221QMn2xbumL5ty-sjAOVwJCzSQzZazfGQh%22%29"}}
+{"level":"info","message":"search: drive_file_index intersection","context":{"candidates":1,"hits":1,"bucket":"single"}}
+{"level":"info","message":"search: hit count evaluated","context":{"iteration":3,"hitCount":1,"bucket":"single","driveResults":1}}
+{"level":"info","message":"search: branching outcome","context":{"keywordCount":2,"driveQuery":"('1OtezWxz3aItaNxPMXqKUD4Ujx7tRQGk2' in parents) and (trashed = false and fullText contains '御見積書' and fullText contains '見積')","hits":1,"bucket":"single","branch":"single->single","iteration":3,"retries":2,"loopLimitReached":false,"mock":false,"vectorApplied":false,"finalBucket":"single","reranked":false}}
+keywords: 御見積書, 見積
+hits: 1 (bucket=single)
+[1] テンプレート_御見積書.pdf
+    要約: この文書は見積書のフォーマットで、東京千代田区の○○株式会社宛てに送られています。見積もりの詳細には合計金額、担当者、納期、支払条件、有効期限、商品やサービスの単価、数量、摘要、消費税、前回の請求額、今回の入金額、見積額、値引き額、小計、源泉徴収額が含まれています。
+    Link: https://drive.google.com/open?id=1QMn2xbumL5ty-sjAOVwJCzSQzZazfGQh
