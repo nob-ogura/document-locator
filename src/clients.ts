@@ -329,6 +329,11 @@ export type OpenAIChatMessage = {
   content: string;
 };
 
+// Response messages from the Chat Completions API can omit content (e.g. for tool calls).
+export type OpenAIChatResponseMessage = Omit<OpenAIChatMessage, "content"> & {
+  content?: string | null;
+};
+
 export type OpenAIChatRequest = {
   messages: OpenAIChatMessage[];
   model?: string;
@@ -338,12 +343,13 @@ export type OpenAIChatRequest = {
 
 export type OpenAIChatChoice = {
   index: number;
-  message: OpenAIChatMessage & { refusal?: string | null };
+  message: OpenAIChatResponseMessage & { refusal?: string | null };
   finish_reason?: string | null;
 };
 
 export type OpenAIChatResponse = {
   id?: string;
+  object?: string;
   choices: OpenAIChatChoice[];
   usage?: OpenAIUsage;
 };
