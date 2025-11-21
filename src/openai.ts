@@ -1,7 +1,13 @@
-import type { OpenAIChatRequest, OpenAIChatResponse, OpenAIClient } from "./clients.js";
+import type {
+  OpenAIChatRequest,
+  OpenAIChatResponse,
+  OpenAIClient,
+  OpenAIEmbeddingData,
+} from "./clients.js";
 import type { Logger } from "./logger.js";
 
 type ChatClient = Pick<OpenAIClient, "chat">;
+type EmbeddingsClient = Pick<OpenAIClient, "embeddings">;
 
 export type SummarizeTextOptions = {
   openai: ChatClient;
@@ -16,6 +22,17 @@ export type ExtractKeywordsOptions = {
   logger?: Logger;
 };
 
+export type BuildEmbeddingInputOptions = {
+  summary: string;
+  keywords?: string[] | null;
+  fileName: string;
+};
+
+export type GenerateEmbeddingOptions = {
+  openai: EmbeddingsClient;
+  input: string;
+};
+
 const SUMMARY_MODEL = "gpt-4o-mini";
 const SUMMARY_TEMPERATURE = 0;
 const SUMMARY_MAX_TOKENS = 200;
@@ -24,6 +41,8 @@ const KEYWORDS_TEMPERATURE = SUMMARY_TEMPERATURE;
 const KEYWORDS_MAX_TOKENS = SUMMARY_MAX_TOKENS;
 const KEYWORDS_MIN_LENGTH = 3;
 const KEYWORDS_MAX_LENGTH = 5;
+const EMBEDDING_MODEL = "text-embedding-3-small";
+const EMBEDDING_DIMENSION = 1536;
 
 const clampMaxTokens = (summaryMaxLength: number): number => {
   const safeLength =
@@ -119,6 +138,16 @@ const parseKeywordsContent = (content: string, logger?: Logger): string[] => {
   throw new Error("OpenAI keyword response could not be normalized to 3-5 keywords");
 };
 
+const isValidEmbeddingVector = (
+  data: OpenAIEmbeddingData | undefined,
+): data is OpenAIEmbeddingData => {
+  if (!data) return false;
+  if (typeof data.index !== "number" || !Number.isInteger(data.index)) return false;
+  if (!Array.isArray(data.embedding)) return false;
+  if (data.embedding.length !== EMBEDDING_DIMENSION) return false;
+  return data.embedding.every((value) => typeof value === "number" && Number.isFinite(value));
+};
+
 /**
  * 長文テキストを要約し、SUMMARY_MAX_LENGTH 以下に二重制限する。
  *
@@ -187,4 +216,42 @@ export const extractKeywords = async (options: ExtractKeywordsOptions): Promise<
   const content = extractContent(response);
 
   return parseKeywordsContent(content, logger);
+};
+
+/**
+ * 要約・キーワード・ファイル名を結合し、Embedding 入力文字列を生成する。
+ */
+export const buildEmbeddingInput = (options: BuildEmbeddingInputOptions): string => {
+  const { summary, keywords, fileName } = options;
+  const normalizedKeywords = keywords ? normalizeKeywordStrings(keywords) : [];
+
+  const parts = [
+    summary?.trim() ?? "",
+    normalizedKeywords.length > 0 ? `Keywords: ${normalizedKeywords.join(", ")}` : "",
+    `File: ${fileName}`,
+  ];
+
+  return parts.filter((part) => part.trim().length > 0).join("\n");
+};
+
+/**
+ * text-embedding-3-small で 1536 次元のベクトルを生成し、型ガードで誤応答を排除する。
+ */
+export const generateEmbedding = async (options: GenerateEmbeddingOptions): Promise<number[]> => {
+  const { openai, input } = options;
+
+  const response = await openai.embeddings.create({
+    model: EMBEDDING_MODEL,
+    input,
+  });
+
+  const first = response.data.length > 0 ? response.data[0] : undefined;
+  const length = Array.isArray(first?.embedding) ? first?.embedding.length : undefined;
+  if (!isValidEmbeddingVector(first)) {
+    throw new Error(
+      `OpenAI embedding vector must contain ${EMBEDDING_DIMENSION} numbers (received ${length ?? "none"})`,
+    );
+  }
+
+  return first.embedding;
 };
