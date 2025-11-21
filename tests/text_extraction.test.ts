@@ -116,7 +116,7 @@ describe("fetchGoogleDocText", () => {
     expect(exportUrl.pathname).toBe("/drive/v3/files/doc-429/export");
     expect(exportUrl.searchParams.get("mimeType")).toBe("text/plain");
 
-    expect(logger.info).toHaveBeenCalledWith(
+    expect(logger.debug).toHaveBeenCalledWith(
       "http retry",
       expect.objectContaining({ attempt: 1, status: 429, delayMs: 1000 }),
     );

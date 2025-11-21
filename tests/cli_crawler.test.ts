@@ -52,6 +52,13 @@ const parseLogLine = (stdout: string): LogPayload => {
   return firstLine ? (JSON.parse(firstLine) as LogPayload) : {};
 };
 
+const parseLogs = (stdout: string): LogPayload[] =>
+  stdout
+    .split("\n")
+    .map((line) => line.trim())
+    .filter((line) => line.length > 0)
+    .map((line) => JSON.parse(line) as LogPayload);
+
 describe("crawler CLI", () => {
   it("mode オプション省略時は CRAWLER_MODE をデフォルト採用する", () => {
     const result = runCrawlerCli([], { CRAWLER_MODE: "diff" });
@@ -76,5 +83,26 @@ describe("crawler CLI", () => {
 
     expect(result.status).toBe(1);
     expect(result.stderr).toMatch(/SUPABASE_SERVICE_ROLE_KEY/);
+  });
+
+  it("完了時にサマリを INFO ログで出力する", () => {
+    const result = runCrawlerCli([], {});
+
+    expect(result.status).toBe(0);
+
+    const logs = parseLogs(result.stdout);
+    const summary = logs.find((log) => log.message?.startsWith("crawler: summary"));
+
+    expect(summary?.message).toMatch(/processed=0/);
+    expect(summary?.message).toMatch(/skipped=0/);
+    expect(summary?.message).toMatch(/upserted=0/);
+    expect(summary?.message).toMatch(/failed=0/);
+  });
+
+  it("致命的エラー時は非ゼロ終了コードを返す", () => {
+    const result = runCrawlerCli([], { MOCK_SUPABASE_STATUS: "500" });
+
+    expect(result.status).toBe(1);
+    expect(result.stderr || result.stdout).toMatch(/Supabase request failed|HTTP 500/);
   });
 });

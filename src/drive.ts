@@ -76,7 +76,7 @@ const listWithBackoff = async (
     }
 
     const delayMs = DEFAULT_BASE_DELAY_MS * 2 ** (attempt - 1);
-    logger?.info("http retry", { attempt, status: response.status, delayMs });
+    logger?.debug("http retry", { attempt, status: response.status, delayMs });
     await sleep(delayMs);
   }
 

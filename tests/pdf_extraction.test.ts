@@ -114,7 +114,7 @@ describe("fetchPdfText", () => {
 
     expect(fetchMock).toHaveBeenCalledTimes(3);
 
-    expect(logger.info).toHaveBeenCalledWith(
+    expect(logger.debug).toHaveBeenCalledWith(
       "http retry",
       expect.objectContaining({ attempt: 1, status: 429, delayMs: 1000 }),
     );

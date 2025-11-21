@@ -65,7 +65,7 @@ export const fetchWithRetry = async (
       }
 
       const delayMs = baseDelayMs * 2 ** (attempt - 1);
-      logger?.info("http retry", { attempt, status: "exception", delayMs, url: urlText });
+      logger?.debug("http retry", { attempt, status: "exception", delayMs, url: urlText });
       await sleep(delayMs);
       continue;
     }
@@ -88,7 +88,7 @@ export const fetchWithRetry = async (
     }
 
     const delayMs = baseDelayMs * 2 ** (attempt - 1);
-    logger?.info("http retry", { attempt, status: response.status, delayMs, url: urlText });
+    logger?.debug("http retry", { attempt, status: response.status, delayMs, url: urlText });
     await sleep(delayMs);
   }
 

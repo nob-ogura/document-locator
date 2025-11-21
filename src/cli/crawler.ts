@@ -1,8 +1,9 @@
 import { Command, InvalidArgumentError } from "commander";
 import type { GoogleDriveClient, SupabaseClient } from "../clients.ts";
-import { enumerateDriveFiles } from "../crawler.ts";
+import { logCrawlerSummary, syncSupabaseIndex } from "../crawler.ts";
 import { type CrawlerMode, loadEnv } from "../env.ts";
 import { createLogger, type Logger } from "../logger.ts";
+import { createMockOpenAIClient } from "../openai-provider.ts";
 
 const MODES: CrawlerMode[] = ["auto", "full", "diff"];
 
@@ -28,17 +29,21 @@ const shouldUseMockSupabase = (): boolean =>
   process.env.JEST_WORKER_ID !== undefined ||
   process.env.NODE_ENV === "test";
 
-const createMockSupabaseClient = (logger: Logger, driveModifiedAt?: string): SupabaseClient => {
+const createMockSupabaseClient = (
+  logger: Logger,
+  options: { driveModifiedAt?: string; status?: number } = {},
+): SupabaseClient => {
+  const { driveModifiedAt, status = 200 } = options;
   const rows = driveModifiedAt ? [{ id: "global", drive_modified_at: driveModifiedAt }] : [];
 
-  const body = JSON.stringify(rows);
+  const body = status === 200 ? JSON.stringify(rows) : JSON.stringify({ error: "mock failure" });
   const headers = { "Content-Type": "application/json" };
 
   return {
     logger,
     credentials: { url: "mock://supabase", serviceRoleKey: "mock-service-role-key" },
     // Ignore input/init; return consistent mock rows sufficient for drive_sync_state reads.
-    request: async () => new Response(body, { status: 200, headers }),
+    request: async () => new Response(body, { status, headers }),
   };
 };
 
@@ -75,21 +80,29 @@ program
   .option<CrawlerMode>("-m, --mode <mode>", "crawl mode: auto | full | diff", parseMode)
   .option<number>("-l, --limit <number>", "limit number of files processed in one run", parseLimit)
   .action(async (options: { mode?: CrawlerMode; limit?: number }) => {
+    let logger: Logger | undefined;
     try {
       const config = loadEnv();
       const mode: CrawlerMode = options.mode ?? config.crawlerMode;
       const limit = options.limit;
 
-      const logger = createLogger(config.logLevel);
+      logger = createLogger(config.logLevel);
       logger.info("crawler: starting", { mode, limit: limit ?? null });
 
       const useMock = shouldUseMockSupabase();
+      const mockStatusRaw = process.env.MOCK_SUPABASE_STATUS;
+      const mockStatus = mockStatusRaw ? Number.parseInt(mockStatusRaw, 10) : undefined;
+
       const supabase = useMock
-        ? createMockSupabaseClient(logger, process.env.MOCK_DRIVE_MODIFIED_AT)
+        ? createMockSupabaseClient(logger, {
+            driveModifiedAt: process.env.MOCK_DRIVE_MODIFIED_AT,
+            status: Number.isFinite(mockStatus) ? mockStatus : undefined,
+          })
         : undefined;
       const googleDrive = useMock ? createMockGoogleDriveClient(logger) : undefined;
+      const openai = useMock ? createMockOpenAIClient({ logger }) : undefined;
 
-      const result = await enumerateDriveFiles({
+      const result = await syncSupabaseIndex({
         config,
         mode,
         limit,
@@ -97,6 +110,7 @@ program
           logger,
           supabase,
           googleDrive,
+          openai,
         },
       });
 
@@ -113,9 +127,15 @@ program
         skipped: result.skipped.length,
         limit: limit ?? null,
       });
+
+      logCrawlerSummary(result, logger);
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
-      console.error(message);
+      if (logger) {
+        logger.error("crawler: fatal error", { error: message });
+      } else {
+        console.error(message);
+      }
       process.exitCode = 1;
     }
   });

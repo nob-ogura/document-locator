@@ -144,7 +144,7 @@ describe("listDriveFilesPaged", () => {
     const files = await promise;
     expect(files.map((f) => f.id)).toEqual(["file-ok"]);
 
-    expect(logger.info).toHaveBeenCalledWith(
+    expect(logger.debug).toHaveBeenCalledWith(
       "http retry",
       expect.objectContaining({ attempt: 1, status: 429, delayMs: 1000 }),
     );

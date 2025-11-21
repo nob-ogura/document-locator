@@ -455,3 +455,28 @@ export const syncSupabaseIndex = async (
     ...stats,
   } satisfies SyncSupabaseResult;
 };
+
+export type CrawlerSummaryInput = Pick<
+  SyncSupabaseResult,
+  "processed" | "skipped" | "upsertedCount" | "failedUpserts"
+>;
+
+export type CrawlerSummary = {
+  processed: number;
+  skipped: number;
+  upserted: number;
+  failed: number;
+};
+
+export const logCrawlerSummary = (result: CrawlerSummaryInput, logger?: Logger): CrawlerSummary => {
+  const processed = result.processed.length;
+  const skipped = result.skipped.length;
+  const upserted = result.upsertedCount;
+  const failedUpserts = result.failedUpserts?.length ?? 0;
+  const failed = Math.max(0, processed - upserted) + failedUpserts;
+
+  const message = `crawler: summary processed=${processed} skipped=${skipped} upserted=${upserted} failed=${failed}`;
+  logger?.info(message, { processed, skipped, upserted, failed });
+
+  return { processed, skipped, upserted, failed } satisfies CrawlerSummary;
+};

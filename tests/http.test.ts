@@ -46,13 +46,13 @@ describe("fetchWithRetry", () => {
     const response = await promise;
     expect(response.status).toBe(200);
 
-    expect(logger.info).toHaveBeenCalledTimes(2);
-    expect(logger.info).toHaveBeenNthCalledWith(
+    expect(logger.debug).toHaveBeenCalledTimes(2);
+    expect(logger.debug).toHaveBeenNthCalledWith(
       1,
       "http retry",
       expect.objectContaining({ attempt: 1, status: 429, delayMs: 1000 }),
     );
-    expect(logger.info).toHaveBeenNthCalledWith(
+    expect(logger.debug).toHaveBeenNthCalledWith(
       2,
       "http retry",
       expect.objectContaining({ attempt: 2, status: 500, delayMs: 2000 }),
@@ -73,5 +73,6 @@ describe("fetchWithRetry", () => {
 
     expect(fetchMock).toHaveBeenCalledTimes(1);
     expect(logger.info).not.toHaveBeenCalled();
+    expect(logger.debug).not.toHaveBeenCalled();
   });
 });
