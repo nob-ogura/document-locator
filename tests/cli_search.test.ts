@@ -110,4 +110,15 @@ describe("search CLI", () => {
       expect(linkLine).toMatch(/^Link: https:\/\/drive\.google\.com\/open\?id=mock-file-/);
     }
   });
+
+  it("101件以上かつループ上限に達したら警告を表示する", () => {
+    const result = runSearchCli(["--", "大量ヒット"], {
+      SEARCH_MOCK_DRIVE_FILE_COUNT: "120",
+      SEARCH_MAX_LOOP_COUNT: "1",
+    });
+
+    expect(result.status).toBe(0);
+    expect(result.stdout).toMatch(/hits:\s*120\s*\(bucket=tooMany\)/);
+    expect(result.stdout).toMatch(/10 件以下に絞り込めませんでした/);
+  });
 });

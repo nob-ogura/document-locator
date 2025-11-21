@@ -180,6 +180,7 @@ describe("runSearchWithRanking", () => {
     expect(initialSearch).toHaveBeenCalledTimes(1);
     expect(embeddingsCreate).toHaveBeenCalledTimes(1);
     expect(chatCreate).toHaveBeenCalledTimes(1);
+    expect(supabaseRequest).toHaveBeenCalledTimes(2);
 
     expect(result.vectorSearchApplied).toBe(true);
     expect(result.finalBucket).toBe("few");
@@ -231,6 +232,117 @@ describe("runSearchWithRanking", () => {
 
     expect(result.results).toHaveLength(1);
     expect(result.finalBucket).toBe("single");
+    expect(openai.chat.completions.create).not.toHaveBeenCalled();
+    expect(openai.embeddings.create).not.toHaveBeenCalled();
+    expect(supabaseRequest).toHaveBeenCalledTimes(1);
+  });
+
+  it("0件なら追加呼び出しを行わず終了する", async () => {
+    const initialSearch = vi.fn(async ({ request }: { request: SearchRequest }) => ({
+      keywords: ["solo"],
+      driveQuery: `drive:${request.query}`,
+      files: [],
+    }));
+
+    const supabaseRequest = vi.fn<NonNullable<SupabaseClient["request"]>>(
+      async (input: RequestInput) => {
+        const url = typeof input === "string" ? input : "";
+        if (url.includes("drive_file_index")) {
+          return new Response("[]", {
+            status: 200,
+            headers: { "Content-Type": "application/json" },
+          });
+        }
+        return new Response("[]", { status: 200, headers: { "Content-Type": "application/json" } });
+      },
+    );
+
+    const openai = {
+      logger: createLogger("debug"),
+      apiKey: "sk",
+      request: vi.fn(),
+      chat: { completions: { create: vi.fn() } },
+      embeddings: { create: vi.fn() },
+    };
+
+    const result = await runSearchWithRanking({
+      config: baseConfig,
+      request: { query: "no hits", filters: {}, searchMaxLoopCount: 1 },
+      deps: {
+        supabase: {
+          request: supabaseRequest,
+          logger: createLogger("debug"),
+          credentials: { url: "", serviceRoleKey: "" },
+        },
+        openai,
+        initialSearch,
+        logger: createLogger("debug"),
+      },
+    });
+
+    expect(result.initial.bucket).toBe("none");
+    expect(result.initial.loopLimitReached).toBe(true);
+    expect(result.results).toHaveLength(0);
+    expect(result.vectorSearchApplied).toBe(false);
+    expect(result.reranked).toBe(false);
+    expect(supabaseRequest).not.toHaveBeenCalled();
+    expect(openai.chat.completions.create).not.toHaveBeenCalled();
+    expect(openai.embeddings.create).not.toHaveBeenCalled();
+  });
+
+  it("101件以上でループ上限に達した場合は追加処理を行わない", async () => {
+    const initialRows = buildRows(120);
+
+    const initialSearch = vi.fn(async ({ request }: { request: SearchRequest }) => ({
+      keywords: ["kw1", "kw2"],
+      driveQuery: `drive:${request.query}`,
+      files: initialRows.map((row) => ({ id: row.file_id, name: row.file_name })),
+    }));
+
+    const supabaseRequest = vi.fn<NonNullable<SupabaseClient["request"]>>(
+      async (input: RequestInput) => {
+        const url = typeof input === "string" ? input : "";
+        if (url.includes("drive_file_index")) {
+          return new Response(JSON.stringify(initialRows), {
+            status: 200,
+            headers: { "Content-Type": "application/json" },
+          });
+        }
+        return new Response("[]", { status: 200, headers: { "Content-Type": "application/json" } });
+      },
+    );
+
+    const openai = {
+      logger: createLogger("debug"),
+      apiKey: "sk",
+      request: vi.fn(),
+      chat: { completions: { create: vi.fn() } },
+      embeddings: { create: vi.fn() },
+    };
+
+    const result = await runSearchWithRanking({
+      config: baseConfig,
+      request: { query: "too many hits", filters: {}, searchMaxLoopCount: 1 },
+      deps: {
+        supabase: {
+          request: supabaseRequest,
+          logger: createLogger("debug"),
+          credentials: { url: "", serviceRoleKey: "" },
+        },
+        openai,
+        initialSearch,
+        logger: createLogger("debug"),
+      },
+    });
+
+    expect(result.initial.bucket).toBe("tooMany");
+    expect(result.initial.loopLimitReached).toBe(true);
+    expect(result.finalBucket).toBe("tooMany");
+    expect(result.results).toHaveLength(0);
+    expect(result.vectorSearchApplied).toBe(false);
+    expect(result.reranked).toBe(false);
+    expect(initialSearch).toHaveBeenCalledTimes(1);
+    expect(supabaseRequest).toHaveBeenCalledTimes(1);
     expect(openai.chat.completions.create).not.toHaveBeenCalled();
     expect(openai.embeddings.create).not.toHaveBeenCalled();
   });
