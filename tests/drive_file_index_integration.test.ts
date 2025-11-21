@@ -6,18 +6,32 @@ import { applyDriveFileIndex, buildConnectionString } from "../scripts/db-apply.
 
 const supabaseUrl = process.env.SUPABASE_URL;
 const dbPassword = process.env.SUPABASE_DB_PASSWORD;
+const runIntegration = process.env.RUN_SUPABASE_TESTS === "true" && !!supabaseUrl && !!dbPassword;
 
-if (!supabaseUrl || !dbPassword) {
-  throw new Error(
-    "Integration test needs SUPABASE_URL and SUPABASE_DB_PASSWORD in the environment",
+function requireEnv(name: string, value: string | undefined): string {
+  if (!value) {
+    throw new Error(`Expected ${name} to be set when RUN_SUPABASE_TESTS=true`);
+  }
+
+  return value;
+}
+
+if (!runIntegration) {
+  console.warn(
+    "Skipping drive_file_index integration tests: set RUN_SUPABASE_TESTS=true and provide SUPABASE_URL and SUPABASE_DB_PASSWORD to enable",
   );
 }
 
-describe("drive_file_index integration", () => {
-  const connectionString = buildConnectionString(supabaseUrl, dbPassword);
-  const client = new Client({ connectionString, ssl: { rejectUnauthorized: false } });
+describe.skipIf(!runIntegration)("drive_file_index integration", () => {
+  let connectionString: string;
+  let client: Client;
 
   beforeAll(async () => {
+    const supabaseUrlValue = requireEnv("SUPABASE_URL", supabaseUrl);
+    const dbPasswordValue = requireEnv("SUPABASE_DB_PASSWORD", dbPassword);
+    connectionString = buildConnectionString(supabaseUrlValue, dbPasswordValue);
+    client = new Client({ connectionString, ssl: { rejectUnauthorized: false } });
+
     await applyDriveFileIndex({ connectionString });
     await client.connect();
   });

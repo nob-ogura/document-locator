@@ -37,7 +37,7 @@ const createDriveClient = (
     request: vi.fn(),
     auth: { fetchAccessToken: vi.fn() },
     folders: { ensureTargetsExist: vi.fn() },
-    files: { list: vi.fn(), export: exportMock },
+    files: { list: vi.fn(), export: exportMock, get: vi.fn() },
   }) satisfies GoogleDriveClient;
 
 describe("fetchGoogleDocText", () => {
