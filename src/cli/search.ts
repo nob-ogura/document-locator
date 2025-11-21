@@ -225,11 +225,14 @@ program
         driveQuery: result.initial.driveQuery,
         hits: result.initial.hitCount,
         bucket: result.initial.bucket,
+        branch: `${result.initial.bucket}->${result.finalBucket}`,
         iteration: result.initial.iteration,
+        retries: Math.max(result.initial.iteration - 1, 0),
         loopLimitReached: result.initial.loopLimitReached,
         mock: useMock,
         vectorApplied: result.vectorSearchApplied,
         finalBucket: result.finalBucket,
+        reranked: result.reranked,
       });
 
       const keywordsLine =

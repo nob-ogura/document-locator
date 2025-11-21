@@ -78,7 +78,7 @@ describe("createOpenAIClient", () => {
     expect(chatBody.temperature).toBe(0);
     expect(chatBody.max_tokens).toBe(200);
     expect(chatOptions?.baseDelayMs).toBe(1000);
-    expect(chatOptions?.maxRetries).toBe(5);
+    expect(chatOptions?.maxRetries).toBe(6);
 
     expect(logger.debug).toHaveBeenCalledWith(
       "openai usage",
@@ -101,7 +101,7 @@ describe("createOpenAIClient", () => {
     const embBody = JSON.parse(String(embOptions?.body ?? "{}")) as Record<string, unknown>;
     expect(embBody.model).toBe("text-embedding-3-small");
     expect(embOptions?.baseDelayMs).toBe(1000);
-    expect(embOptions?.maxRetries).toBe(5);
+    expect(embOptions?.maxRetries).toBe(6);
 
     expect(logger.debug).toHaveBeenCalledWith(
       "openai usage",

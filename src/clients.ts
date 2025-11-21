@@ -179,7 +179,11 @@ export const createGoogleDriveClient = (
       mergedHeaders.Authorization = `Bearer ${accessToken}`;
     }
 
-    return retryRequest(toAbsoluteUrl("https://www.googleapis.com", input), {
+    const url = toAbsoluteUrl("https://www.googleapis.com", input);
+    const method = (rest.method ?? "GET").toString().toUpperCase();
+    logger.debug("google drive request", { method, url });
+
+    return retryRequest(url, {
       ...rest,
       headers: mergedHeaders,
     });
@@ -378,7 +382,8 @@ const DEFAULT_CHAT_MAX_TOKENS = 200;
 const DEFAULT_EMBEDDINGS_MODEL = "text-embedding-3-small";
 
 const DEFAULT_OPENAI_RETRY: Pick<FetchWithRetryOptions, "maxRetries" | "baseDelayMs"> = {
-  maxRetries: 5,
+  // 5 retries (6 attempts) with 1s start: 1s,2s,4s,8s,16s
+  maxRetries: 6,
   baseDelayMs: 1000,
 };
 
@@ -514,7 +519,11 @@ export const createSupabaseClient = (config: AppConfig, deps: ClientDeps = {}): 
       mergedHeaders.Authorization = `Bearer ${config.supabaseServiceRoleKey}`;
     }
 
-    return retryRequest(toAbsoluteUrl(config.supabaseUrl, input), {
+    const url = toAbsoluteUrl(config.supabaseUrl, input);
+    const method = (rest.method ?? "GET").toString().toUpperCase();
+    logger.debug("supabase request", { method, url });
+
+    return retryRequest(url, {
       ...rest,
       headers: mergedHeaders,
     });

@@ -8,7 +8,9 @@ export type FetchWithRetryOptions = RequestInit & {
   fetch?: FetchLike;
   logger?: Logger;
   /**
-   * 最大リトライ回数（初回リクエストを含む）
+   * 最大試行回数（初回リクエストを含む）。
+   * 429/5xx で 1s→2s→4s→8s→16s の指数バックオフをかけ、
+   * 5 回のリトライ機会を持つように既定値を設定する。
    */
   maxRetries?: number;
   /**
@@ -38,7 +40,7 @@ export const fetchWithRetry = async (
   const {
     fetch: fetchImpl = globalThis.fetch,
     logger,
-    maxRetries = 5,
+    maxRetries = 6,
     baseDelayMs = 1000,
     ...init
   } = options;
