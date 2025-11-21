@@ -69,6 +69,10 @@ export type GoogleDriveFilesListParams = {
   supportsAllDrives?: boolean;
 };
 
+export type GoogleDriveFilesExportParams = {
+  accessToken?: string;
+};
+
 type GoogleDriveAccessTokenResponse = {
   access_token?: string;
   expires_in?: number;
@@ -100,6 +104,12 @@ export type GoogleDriveClient = {
   };
   files: {
     list: (params?: GoogleDriveFilesListParams, init?: GoogleDriveRequestInit) => Promise<Response>;
+    export: (
+      fileId: string,
+      mimeType: string,
+      params?: GoogleDriveFilesExportParams,
+      init?: GoogleDriveRequestInit,
+    ) => Promise<Response>;
   };
 };
 
@@ -188,6 +198,12 @@ export const createGoogleDriveClient = (
     return `/drive/v3/files?${searchParams.toString()}`;
   };
 
+  const buildFilesExportUrl = (fileId: string, mimeType: string) => {
+    const encodedId = encodeURIComponent(fileId);
+    const params = new URLSearchParams({ mimeType });
+    return `/drive/v3/files/${encodedId}/export?${params.toString()}`;
+  };
+
   const ensureFolderExists = async (folderId: string, accessToken: string): Promise<void> => {
     const encodedId = encodeURIComponent(folderId);
     const url = `/drive/v3/files/${encodedId}?fields=id,name,mimeType,trashed`;
@@ -225,6 +241,12 @@ export const createGoogleDriveClient = (
       const { accessToken: providedToken, ...rest } = params;
       const accessToken = providedToken ?? (await fetchAccessToken());
       const url = buildFilesListUrl(rest);
+      return request(url, { ...init, accessToken });
+    },
+    export: async (fileId, mimeType, params = {}, init = {}) => {
+      const { accessToken: providedToken } = params;
+      const accessToken = providedToken ?? (await fetchAccessToken());
+      const url = buildFilesExportUrl(fileId, mimeType);
       return request(url, { ...init, accessToken });
     },
   };

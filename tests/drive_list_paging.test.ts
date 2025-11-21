@@ -27,7 +27,7 @@ const createDriveClient = (listMock: Mock<GoogleDriveClient["files"]["list"]>): 
     request: vi.fn(),
     auth: { fetchAccessToken: vi.fn() },
     folders: { ensureTargetsExist: vi.fn() },
-    files: { list: listMock },
+    files: { list: listMock, export: vi.fn() },
   }) satisfies GoogleDriveClient;
 
 const createSupabaseClient = (): SupabaseClient =>
