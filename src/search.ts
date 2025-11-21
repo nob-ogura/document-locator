@@ -1,9 +1,14 @@
-import type { GoogleDriveClient, OpenAIClient } from "./clients.ts";
-import { createGoogleDriveClient } from "./clients.ts";
+import type { GoogleDriveClient, OpenAIClient, SupabaseClient } from "./clients.ts";
+import { createGoogleDriveClient, createSupabaseClient } from "./clients.ts";
 import type { DriveFileEntry } from "./drive.ts";
+import {
+  type DriveFileIndexRow,
+  fetchDriveFileIndexByIds,
+  vectorSearchDriveFileIndex,
+} from "./drive_file_index_repository.ts";
 import type { AppConfig } from "./env.ts";
 import { createLogger, type Logger } from "./logger.ts";
-import { extractKeywords } from "./openai.ts";
+import { extractKeywords, generateEmbedding } from "./openai.ts";
 import { resolveOpenAIClient } from "./openai-provider.ts";
 
 export type SearchFilters = {
@@ -30,6 +35,49 @@ export type InitialDriveSearchResult = {
   files: DriveFileEntry[];
 };
 
+export type HitCountBucket = "none" | "single" | "few" | "many" | "tooMany";
+
+export type HitCountResult = {
+  hitCount: number;
+  bucket: HitCountBucket;
+  indexedFiles: DriveFileIndexRow[];
+};
+
+export type SearchLoopResult = HitCountResult & {
+  keywords: string[];
+  driveQuery: string;
+  files: DriveFileEntry[];
+  iteration: number;
+  loopLimitReached: boolean;
+  query: string;
+};
+
+export type SearchLoopDeps = InitialSearchDeps & {
+  supabase?: SupabaseClient;
+  /**
+   * Hook for asking the user to narrow the query when hits exceed 100.
+   * When omitted, the loop stops at the current iteration.
+   */
+  askUser?: (question: string) => Promise<string>;
+  /**
+   * Test seam to override the Drive+OpenAI search step.
+   */
+  initialSearch?: typeof runInitialDriveSearch;
+};
+
+export type SearchExecutionDeps = SearchLoopDeps & {
+  openai?: OpenAIClient;
+  vectorSearch?: typeof vectorSearchDriveFileIndex;
+};
+
+export type SearchOutcome = {
+  initial: SearchLoopResult;
+  finalBucket: HitCountBucket;
+  results: DriveFileIndexRow[];
+  vectorSearchApplied: boolean;
+  reranked: boolean;
+};
+
 type FilesListResponse = {
   files?: DriveFileEntry[];
   nextPageToken?: string;
@@ -42,6 +90,15 @@ const escapeSingleQuotes = (value: string): string => value.replace(/'/g, "\\'")
 
 const normalizeKeywords = (values: string[]): string[] =>
   Array.from(new Set(values.map((value) => value.trim()).filter((value) => value.length > 0)));
+
+const uniqueDriveFileIds = (files: DriveFileEntry[]): string[] =>
+  Array.from(
+    new Set(
+      files
+        .map((file) => file.id?.trim())
+        .filter((id): id is string => typeof id === "string" && id.length > 0),
+    ),
+  );
 
 const toDateBoundary = (date: string, endOfDay: boolean): string => {
   const suffix = endOfDay ? "T23:59:59Z" : "T00:00:00Z";
@@ -207,4 +264,348 @@ export const runInitialDriveSearch = async (options: {
     driveQuery: scopedQuery,
     files,
   };
+};
+
+export const classifyHitCount = (hitCount: number): HitCountBucket => {
+  if (hitCount <= 0) return "none";
+  if (hitCount === 1) return "single";
+  if (hitCount <= 10) return "few";
+  if (hitCount <= 100) return "many";
+  return "tooMany";
+};
+
+const buildFollowupQuestion = (hitCount: number, query: string): string =>
+  [
+    `検索結果が ${hitCount} 件あります。`,
+    "キーワードや期間を追加して絞り込みたいので、" + "1 行で入力してください。",
+    `現在のクエリ: ${query}`,
+  ].join("\n");
+
+const ensureSupabaseClient = (
+  config: AppConfig,
+  deps: { supabase?: SupabaseClient; logger?: Logger },
+): SupabaseClient => deps.supabase ?? createSupabaseClient(config, { logger: deps.logger });
+
+const evaluateHitsWithIndex = async (options: {
+  supabase: SupabaseClient;
+  files: DriveFileEntry[];
+  logger?: Logger;
+}): Promise<HitCountResult> => {
+  const { supabase, files, logger } = options;
+  const ids = uniqueDriveFileIds(files);
+  if (ids.length === 0) {
+    logger?.info("search: no drive ids to intersect", { candidates: 0, hits: 0 });
+    return { hitCount: 0, bucket: "none", indexedFiles: [] };
+  }
+
+  const indexedFiles = await fetchDriveFileIndexByIds(supabase, ids);
+  const hitCount = indexedFiles.length;
+  const bucket = classifyHitCount(hitCount);
+
+  logger?.info("search: drive_file_index intersection", {
+    candidates: ids.length,
+    hits: hitCount,
+    bucket,
+  });
+
+  return { hitCount, bucket, indexedFiles };
+};
+
+export const runSearchWithBranching = async (options: {
+  config: AppConfig;
+  request: SearchRequest;
+  deps?: SearchLoopDeps;
+}): Promise<SearchLoopResult> => {
+  const { config } = options;
+  const logger = options.deps?.logger ?? createLogger(config.logLevel);
+  const supabase = ensureSupabaseClient(config, {
+    supabase: options.deps?.supabase,
+    logger,
+  });
+  const performInitialSearch: typeof runInitialDriveSearch =
+    options.deps?.initialSearch ??
+    ((params) =>
+      runInitialDriveSearch({
+        ...params,
+        deps: {
+          googleDrive: options.deps?.googleDrive,
+          openai: options.deps?.openai,
+          logger,
+        },
+      }));
+
+  const askUser = options.deps?.askUser;
+
+  let iteration = 0;
+  let currentRequest = options.request;
+
+  while (true) {
+    iteration += 1;
+
+    const initial = await performInitialSearch({ config, request: currentRequest });
+    const hitResult = await evaluateHitsWithIndex({
+      supabase,
+      files: initial.files,
+      logger,
+    });
+
+    logger.info("search: hit count evaluated", {
+      iteration,
+      hitCount: hitResult.hitCount,
+      bucket: hitResult.bucket,
+      driveResults: initial.files.length,
+    });
+
+    const loopLimitReached =
+      hitResult.bucket === "tooMany" && iteration >= options.request.searchMaxLoopCount;
+
+    if (hitResult.bucket !== "tooMany" || loopLimitReached) {
+      return {
+        ...hitResult,
+        keywords: initial.keywords,
+        driveQuery: initial.driveQuery,
+        files: initial.files,
+        iteration,
+        loopLimitReached,
+        query: currentRequest.query,
+      };
+    }
+
+    if (!askUser) {
+      return {
+        ...hitResult,
+        keywords: initial.keywords,
+        driveQuery: initial.driveQuery,
+        files: initial.files,
+        iteration,
+        loopLimitReached: true,
+        query: currentRequest.query,
+      };
+    }
+
+    const answer = (
+      await askUser(buildFollowupQuestion(hitResult.hitCount, currentRequest.query))
+    ).trim();
+    if (!answer) {
+      logger.info("search: user did not provide refinement; stopping");
+      return {
+        ...hitResult,
+        keywords: initial.keywords,
+        driveQuery: initial.driveQuery,
+        files: initial.files,
+        iteration,
+        loopLimitReached: true,
+        query: currentRequest.query,
+      };
+    }
+
+    currentRequest = {
+      ...currentRequest,
+      query: `${currentRequest.query} ${answer}`.trim(),
+    };
+    logger.info("search: retrying with refined query", {
+      iteration: iteration + 1,
+      query: currentRequest.query,
+    });
+  }
+};
+
+const DISPLAY_RESULT_LIMIT = 10;
+const VECTOR_SEARCH_LIMIT = 20;
+
+const buildQueryEmbeddingText = (query: string, keywords: string[]): string => {
+  const keywordLine = keywords.length > 0 ? `Keywords: ${keywords.join(", ")}` : "";
+  return [query.trim(), keywordLine].filter((value) => value.length > 0).join("\n");
+};
+
+const parseIdRanking = (content: string, validIds: Set<string>): string[] => {
+  try {
+    const parsed = JSON.parse(content);
+    if (Array.isArray(parsed)) {
+      return parsed
+        .map((value) => (typeof value === "string" ? value : String(value)))
+        .map((value) => value.trim())
+        .filter((value) => value.length > 0 && validIds.has(value));
+    }
+  } catch {
+    // ignore parse errors and fall back to original order
+  }
+  return [];
+};
+
+const rerankResultsWithLLM = async (options: {
+  openai: Pick<OpenAIClient, "chat">;
+  query: string;
+  candidates: DriveFileIndexRow[];
+  logger?: Logger;
+}): Promise<DriveFileIndexRow[]> => {
+  const { openai, query, candidates, logger } = options;
+  if (candidates.length <= 1) return candidates;
+
+  const validIds = new Set(candidates.map((row) => row.file_id));
+  const candidatesText = candidates
+    .map((row, index) => {
+      const parts = [
+        `#${index + 1}: ${row.file_name}`,
+        `id: ${row.file_id}`,
+        `summary: ${row.summary}`,
+        row.keywords && row.keywords.length > 0 ? `keywords: ${row.keywords.join(", ")}` : "",
+      ].filter((part) => part.length > 0);
+      return parts.join("\n");
+    })
+    .join("\n\n");
+
+  const response = await openai.chat.completions.create({
+    model: "gpt-4o-mini",
+    temperature: 0,
+    max_tokens: 200,
+    messages: [
+      {
+        role: "system",
+        content: [
+          "You are a ranking model.",
+          "Sort the provided documents in order of relevance to the user's query.",
+          "Respond ONLY with a JSON array of file_id values in the desired order. Include all ids.",
+        ].join(" "),
+      },
+      {
+        role: "user",
+        content: [`User query: ${query.trim()}`, "Documents:", candidatesText].join("\n"),
+      },
+    ],
+  });
+
+  const content = response.choices?.[0]?.message?.content ?? "";
+  const rankedIds = parseIdRanking(content, validIds);
+
+  if (rankedIds.length === 0) {
+    logger?.info("search: rerank fallback to original order", { returned: content });
+    return candidates;
+  }
+
+  const rankedSet = new Set(rankedIds);
+  const ranked = rankedIds
+    .map((id) => candidates.find((row) => row.file_id === id))
+    .filter((row): row is DriveFileIndexRow => Boolean(row));
+  const remaining = candidates.filter((row) => !rankedSet.has(row.file_id));
+
+  const ordered = [...ranked, ...remaining].slice(0, DISPLAY_RESULT_LIMIT);
+  logger?.info("search: rerank completed", { count: ordered.length });
+  return ordered;
+};
+
+const runVectorSearchStep = async (options: {
+  openai: OpenAIClient;
+  supabase: SupabaseClient;
+  query: string;
+  keywords: string[];
+  filterFileIds: string[];
+  logger?: Logger;
+  vectorSearch?: typeof vectorSearchDriveFileIndex;
+}): Promise<DriveFileIndexRow[]> => {
+  const { openai, supabase, query, keywords, filterFileIds, logger } = options;
+  if (filterFileIds.length === 0) return [];
+
+  const input = buildQueryEmbeddingText(query, keywords);
+  const embedding = await generateEmbedding({ openai, input });
+  const vectorSearch = options.vectorSearch ?? vectorSearchDriveFileIndex;
+  const candidates = await vectorSearch(supabase, embedding, {
+    limit: VECTOR_SEARCH_LIMIT,
+    filterFileIds,
+  });
+
+  const limited = candidates.slice(0, DISPLAY_RESULT_LIMIT);
+  logger?.info("search: vector search completed", {
+    retrieved: candidates.length,
+    limited: limited.length,
+  });
+  return limited;
+};
+
+export const runSearchWithRanking = async (options: {
+  config: AppConfig;
+  request: SearchRequest;
+  deps?: SearchExecutionDeps;
+}): Promise<SearchOutcome> => {
+  const { config, request } = options;
+  const logger = options.deps?.logger ?? createLogger(config.logLevel);
+  const supabase = ensureSupabaseClient(config, {
+    supabase: options.deps?.supabase,
+    logger,
+  });
+
+  const resolvedOpenAI = options.deps?.openai ?? resolveOpenAIClient(config, { logger }).openai;
+
+  const branching = await runSearchWithBranching({
+    config,
+    request,
+    deps: {
+      ...options.deps,
+      supabase,
+      openai: resolvedOpenAI,
+      logger,
+    },
+  });
+
+  const outcome: SearchOutcome = {
+    initial: branching,
+    finalBucket: branching.bucket,
+    results: [],
+    vectorSearchApplied: false,
+    reranked: false,
+  };
+
+  if (branching.bucket === "tooMany") {
+    return outcome;
+  }
+
+  if (branching.bucket === "single") {
+    outcome.results = branching.indexedFiles.slice(0, 1);
+    return outcome;
+  }
+
+  if (branching.bucket === "few") {
+    outcome.results = await rerankResultsWithLLM({
+      openai: resolvedOpenAI,
+      query: branching.query,
+      candidates: branching.indexedFiles.slice(0, DISPLAY_RESULT_LIMIT),
+      logger,
+    });
+    outcome.reranked = outcome.results.length > 1;
+    outcome.finalBucket = classifyHitCount(outcome.results.length);
+    return outcome;
+  }
+
+  if (branching.bucket === "many") {
+    outcome.vectorSearchApplied = true;
+    const filterFileIds = branching.indexedFiles.map((row) => row.file_id);
+    const vectorResults = await runVectorSearchStep({
+      openai: resolvedOpenAI,
+      supabase,
+      query: branching.query,
+      keywords: branching.keywords,
+      filterFileIds,
+      logger,
+      vectorSearch: options.deps?.vectorSearch,
+    });
+
+    outcome.results = vectorResults;
+    outcome.finalBucket = classifyHitCount(vectorResults.length);
+
+    if (outcome.finalBucket === "few" && outcome.results.length > 1) {
+      outcome.results = await rerankResultsWithLLM({
+        openai: resolvedOpenAI,
+        query: branching.query,
+        candidates: outcome.results,
+        logger,
+      });
+      outcome.reranked = true;
+      outcome.finalBucket = classifyHitCount(outcome.results.length);
+    }
+
+    return outcome;
+  }
+
+  // bucket === "none"
+  return outcome;
 };

@@ -1,10 +1,14 @@
+import { stdin as input, stdout as output } from "node:process";
+import { createInterface } from "node:readline/promises";
+
 import { Command, InvalidArgumentError } from "commander";
 
-import type { GoogleDriveClient } from "../clients.ts";
+import type { GoogleDriveClient, SupabaseClient } from "../clients.ts";
+import type { DriveFileIndexRow } from "../drive_file_index_repository.ts";
 import { loadEnv } from "../env.ts";
 import { createLogger, type Logger } from "../logger.ts";
 import { createMockOpenAIClient } from "../openai-provider.ts";
-import { runInitialDriveSearch, type SearchFilters, type SearchRequest } from "../search.ts";
+import { runSearchWithRanking, type SearchFilters, type SearchRequest } from "../search.ts";
 
 const ISO_DATE_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
 
@@ -30,6 +34,22 @@ const parseMime = (value: string): string => {
     throw new InvalidArgumentError("mime must be a valid MIME type string");
   }
   return trimmed;
+};
+
+const buildDriveLink = (fileId: string): string =>
+  `https://drive.google.com/open?id=${encodeURIComponent(fileId)}`;
+
+const truncateSummary = (summary: string, limit: number): string =>
+  summary.length > limit ? summary.slice(0, limit) : summary;
+
+const formatResultLines = (results: DriveFileIndexRow[], summaryMaxLength: number): string[] => {
+  const lines: string[] = [];
+  results.forEach((row, index) => {
+    lines.push(`[${index + 1}] ${row.file_name}`);
+    lines.push(`    要約: ${truncateSummary(row.summary, summaryMaxLength)}`);
+    lines.push(`    Link: ${buildDriveLink(row.file_id)}`);
+  });
+  return lines;
 };
 
 const shouldUseMockClients = (): boolean =>
@@ -61,6 +81,43 @@ const createMockGoogleDriveClient = (logger: Logger): GoogleDriveClient => {
       get: async () => emptyList,
     },
   };
+};
+
+const createMockSupabaseClient = (logger: Logger): SupabaseClient => {
+  const headers = { "Content-Type": "application/json" };
+
+  return {
+    logger,
+    credentials: { url: "mock://supabase", serviceRoleKey: "mock-service-role" },
+    request: async (input) => {
+      const raw = typeof input === "string" ? input : "";
+      if (raw.startsWith("/rest/v1/drive_file_index")) {
+        const params = new URL(raw, "https://mock.supabase").searchParams;
+        const filter = params.get("file_id") ?? "";
+        const decoded = decodeURIComponent(filter);
+        const ids = Array.from(decoded.matchAll(/"([^"]+)"/g)).map(([, id]) => id);
+
+        const rows: DriveFileIndexRow[] = ids.map((id) => ({
+          file_id: id,
+          file_name: `mock-${id}`,
+          summary: `mock summary for ${id}`,
+          keywords: ["mock"],
+          drive_modified_at: new Date(0).toISOString(),
+          mime_type: "application/pdf",
+        }));
+        return new Response(JSON.stringify(rows), { status: 200, headers });
+      }
+
+      return new Response(JSON.stringify([]), { status: 200, headers });
+    },
+  };
+};
+
+const promptUserRefinement = async (question: string): Promise<string> => {
+  const rl = createInterface({ input, output });
+  const answer = await rl.question(`${question}\n> `);
+  rl.close();
+  return answer.trim();
 };
 
 type SearchCliOptions = SearchFilters & {
@@ -123,26 +180,53 @@ program
       const useMock = shouldUseMockClients();
       const googleDrive = useMock ? createMockGoogleDriveClient(logger) : undefined;
       const openai = useMock ? createMockOpenAIClient({ logger }) : undefined;
+      const supabase = useMock ? createMockSupabaseClient(logger) : undefined;
 
-      const result = await runInitialDriveSearch({
+      const result = await runSearchWithRanking({
         config,
         request,
-        deps: { googleDrive, openai, logger },
+        deps: {
+          googleDrive,
+          openai,
+          supabase,
+          logger,
+          askUser: promptUserRefinement,
+        },
       });
 
-      logger.info("search: initial drive search", {
-        keywordCount: result.keywords.length,
-        driveQuery: result.driveQuery,
-        hits: result.files.length,
+      logger.info("search: branching outcome", {
+        keywordCount: result.initial.keywords.length,
+        driveQuery: result.initial.driveQuery,
+        hits: result.initial.hitCount,
+        bucket: result.initial.bucket,
+        iteration: result.initial.iteration,
+        loopLimitReached: result.initial.loopLimitReached,
         mock: useMock,
+        vectorApplied: result.vectorSearchApplied,
+        finalBucket: result.finalBucket,
       });
 
       const keywordsLine =
-        result.keywords.length > 0
-          ? `keywords: ${result.keywords.join(", ")}`
+        result.initial.keywords.length > 0
+          ? `keywords: ${result.initial.keywords.join(", ")}`
           : "keywords: (fallback to raw query)";
 
-      console.log([keywordsLine, `initialHits: ${result.files.length}`].join("\n"));
+      const lines = [
+        keywordsLine,
+        `hits: ${result.initial.hitCount} (bucket=${result.initial.bucket})`,
+        result.vectorSearchApplied
+          ? `vector hits: ${result.results.length} (bucket=${result.finalBucket})`
+          : undefined,
+        result.initial.loopLimitReached && result.initial.bucket === "tooMany"
+          ? "10 件以下に絞り込めませんでした"
+          : undefined,
+      ].filter((line): line is string => Boolean(line));
+
+      if (result.results.length > 0) {
+        lines.push(...formatResultLines(result.results, config.summaryMaxLength));
+      }
+
+      console.log(lines.join("\n"));
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       if (logger) {
