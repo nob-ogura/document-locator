@@ -49,6 +49,14 @@ const headersToObject = (headers?: HeadersInit): Record<string, string> => {
   );
 };
 
+const mergeHeaders = (...headersList: HeadersInit[]): Record<string, string> => {
+  const merged: Record<string, string> = {};
+  for (const headers of headersList) {
+    Object.assign(merged, headersToObject(headers));
+  }
+  return merged;
+};
+
 const createRetrier =
   (logger: Logger, retrier: Retrier, fetchImpl?: FetchLike) =>
   (input: RequestInfo, options: BaseRequestInit = {}) =>
@@ -297,15 +305,88 @@ export type OpenAIClient = {
   apiKey: string;
   organization?: string;
   request: (input: RequestInfo, init?: BaseRequestInit) => Promise<Response>;
+  chat: {
+    completions: {
+      create: (payload: OpenAIChatRequest, init?: BaseRequestInit) => Promise<OpenAIChatResponse>;
+    };
+  };
+  embeddings: {
+    create: (
+      payload: OpenAIEmbeddingRequest,
+      init?: BaseRequestInit,
+    ) => Promise<OpenAIEmbeddingResponse>;
+  };
+};
+
+export type OpenAIUsage = {
+  prompt_tokens?: number;
+  completion_tokens?: number;
+  total_tokens?: number;
+};
+
+export type OpenAIChatMessage = {
+  role: "system" | "user" | "assistant";
+  content: string;
+};
+
+export type OpenAIChatRequest = {
+  messages: OpenAIChatMessage[];
+  model?: string;
+  temperature?: number;
+  max_tokens?: number;
+};
+
+export type OpenAIChatChoice = {
+  index: number;
+  message: OpenAIChatMessage & { refusal?: string | null };
+  finish_reason?: string | null;
+};
+
+export type OpenAIChatResponse = {
+  id?: string;
+  choices: OpenAIChatChoice[];
+  usage?: OpenAIUsage;
+};
+
+export type OpenAIEmbeddingRequest = {
+  input: string | string[];
+  model?: string;
+};
+
+export type OpenAIEmbeddingData = {
+  index: number;
+  embedding: number[];
+  object?: string;
+};
+
+export type OpenAIEmbeddingResponse = {
+  object?: string;
+  data: OpenAIEmbeddingData[];
+  model?: string;
+  usage?: OpenAIUsage;
+};
+
+const DEFAULT_CHAT_MODEL = "gpt-4o-mini";
+const DEFAULT_CHAT_TEMPERATURE = 0;
+const DEFAULT_CHAT_MAX_TOKENS = 200;
+const DEFAULT_EMBEDDINGS_MODEL = "text-embedding-3-small";
+
+const DEFAULT_OPENAI_RETRY: Pick<FetchWithRetryOptions, "maxRetries" | "baseDelayMs"> = {
+  maxRetries: 5,
+  baseDelayMs: 1000,
 };
 
 export const createOpenAIClient = (config: AppConfig, deps: ClientDeps = {}): OpenAIClient => {
+  if (!config.openaiApiKey || config.openaiApiKey.trim() === "") {
+    throw new Error("OPENAI_API_KEY is required to initialize OpenAI client");
+  }
+
   const logger = ensureLogger(config, deps.logger);
   const retryRequest = createRetrier(logger, deps.fetchWithRetry ?? fetchWithRetry, deps.fetch);
 
   const request: OpenAIClient["request"] = (input, init = {}) => {
     const { headers, ...rest } = init;
-    const mergedHeaders = headersToObject(headers);
+    const mergedHeaders = mergeHeaders(headers ?? {});
 
     if (!mergedHeaders.Authorization) {
       mergedHeaders.Authorization = `Bearer ${config.openaiApiKey}`;
@@ -316,9 +397,74 @@ export const createOpenAIClient = (config: AppConfig, deps: ClientDeps = {}): Op
     }
 
     return retryRequest(toAbsoluteUrl("https://api.openai.com", input), {
+      ...DEFAULT_OPENAI_RETRY,
       ...rest,
       headers: mergedHeaders,
     });
+  };
+
+  const logUsage = (endpoint: "chat" | "embeddings", model: string, usage?: OpenAIUsage) => {
+    if (!usage) return;
+    logger.debug("openai usage", {
+      endpoint,
+      model,
+      promptTokens: usage.prompt_tokens,
+      completionTokens: usage.completion_tokens,
+      totalTokens: usage.total_tokens,
+    });
+  };
+
+  const parseJson = async <T>(response: Response, label: string): Promise<T> => {
+    try {
+      return (await response.json()) as T;
+    } catch (error) {
+      throw new Error(`Failed to parse ${label}: ${String(error)}`);
+    }
+  };
+
+  const createChatCompletion: OpenAIClient["chat"]["completions"]["create"] = async (
+    payload,
+    init = {},
+  ) => {
+    const body = {
+      model: payload.model ?? DEFAULT_CHAT_MODEL,
+      temperature: payload.temperature ?? DEFAULT_CHAT_TEMPERATURE,
+      max_tokens: payload.max_tokens ?? DEFAULT_CHAT_MAX_TOKENS,
+      messages: payload.messages,
+    } satisfies OpenAIChatRequest;
+
+    const { headers, ...rest } = init;
+    const response = await request("/v1/chat/completions", {
+      ...DEFAULT_OPENAI_RETRY,
+      ...rest,
+      method: "POST",
+      headers: mergeHeaders({ "Content-Type": "application/json" }, headers ?? {}),
+      body: JSON.stringify(body),
+    });
+
+    const parsed = await parseJson<OpenAIChatResponse>(response, "OpenAI chat response");
+    logUsage("chat", body.model ?? DEFAULT_CHAT_MODEL, parsed.usage);
+    return parsed;
+  };
+
+  const createEmbedding: OpenAIClient["embeddings"]["create"] = async (payload, init = {}) => {
+    const body = {
+      model: payload.model ?? DEFAULT_EMBEDDINGS_MODEL,
+      input: payload.input,
+    } satisfies OpenAIEmbeddingRequest;
+
+    const { headers, ...rest } = init;
+    const response = await request("/v1/embeddings", {
+      ...DEFAULT_OPENAI_RETRY,
+      ...rest,
+      method: "POST",
+      headers: mergeHeaders({ "Content-Type": "application/json" }, headers ?? {}),
+      body: JSON.stringify(body),
+    });
+
+    const parsed = await parseJson<OpenAIEmbeddingResponse>(response, "OpenAI embeddings response");
+    logUsage("embeddings", body.model ?? DEFAULT_EMBEDDINGS_MODEL, parsed.usage);
+    return parsed;
   };
 
   return {
@@ -326,6 +472,14 @@ export const createOpenAIClient = (config: AppConfig, deps: ClientDeps = {}): Op
     apiKey: config.openaiApiKey,
     organization: config.openaiOrg,
     request,
+    chat: {
+      completions: {
+        create: createChatCompletion,
+      },
+    },
+    embeddings: {
+      create: createEmbedding,
+    },
   };
 };
 
