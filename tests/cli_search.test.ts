@@ -83,4 +83,31 @@ describe("search CLI", () => {
     expect(result.status).toBe(0);
     expect(result.stdout).toMatch(/見つかりませんでした/);
   });
+
+  it("結果を番号付きで要約とリンクを指定フォーマットで表示する", () => {
+    const result = runSearchCli(["--", "フォーマット検証"], {
+      SEARCH_MOCK_DRIVE_FILE_COUNT: "3",
+      SUMMARY_MAX_LENGTH: "10",
+    });
+
+    expect(result.status).toBe(0);
+
+    const lines = result.stdout.trim().split("\n");
+    const hitLine = lines.find((line) => line.startsWith("hits:"));
+    expect(hitLine).toContain("3");
+    expect(hitLine).toContain("few");
+
+    for (let index = 1; index <= 3; index += 1) {
+      const headerIndex = lines.findIndex((line) => line.startsWith(`[${index}]`));
+      expect(headerIndex).toBeGreaterThan(-1);
+
+      const summaryLine = lines[headerIndex + 1]?.trim() ?? "";
+      expect(summaryLine).toMatch(/^要約: .+/);
+      const summaryText = summaryLine.replace(/^要約: /, "");
+      expect(summaryText.length).toBeLessThanOrEqual(10);
+
+      const linkLine = lines[headerIndex + 2]?.trim() ?? "";
+      expect(linkLine).toMatch(/^Link: https:\/\/drive\.google\.com\/open\?id=mock-file-/);
+    }
+  });
 });

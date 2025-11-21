@@ -58,12 +58,37 @@ const shouldUseMockClients = (): boolean =>
   process.env.JEST_WORKER_ID !== undefined ||
   process.env.NODE_ENV === "test";
 
+const parseMockDriveCount = (): number => {
+  const raw = process.env.SEARCH_MOCK_DRIVE_FILE_COUNT;
+  if (!raw) return 0;
+
+  const parsed = Number.parseInt(raw, 10);
+  if (Number.isNaN(parsed) || parsed < 0) return 0;
+  return parsed;
+};
+
+const buildMockDriveFiles = () => {
+  const count = parseMockDriveCount();
+  return Array.from({ length: count }, (_, index) => {
+    const suffix = index + 1;
+    return {
+      id: `mock-file-${suffix}`,
+      name: `mock-file-${suffix}.pdf`,
+      mimeType: "application/pdf",
+      modifiedTime: new Date(0).toISOString(),
+    };
+  });
+};
+
 const createMockGoogleDriveClient = (logger: Logger): GoogleDriveClient => {
-  const emptyList = () =>
-    new Response(JSON.stringify({ files: [] }), {
-      status: 200,
-      headers: { "Content-Type": "application/json" },
-    });
+  const headers = { "Content-Type": "application/json" };
+  const emptyList = () => new Response(JSON.stringify({ files: [] }), { status: 200, headers });
+  const mockFiles = buildMockDriveFiles();
+
+  const listResponse = () =>
+    mockFiles.length > 0
+      ? new Response(JSON.stringify({ files: mockFiles }), { status: 200, headers })
+      : emptyList();
 
   return {
     logger,
@@ -77,7 +102,7 @@ const createMockGoogleDriveClient = (logger: Logger): GoogleDriveClient => {
     auth: { fetchAccessToken: async () => "mock-access-token" },
     folders: { ensureTargetsExist: async () => undefined },
     files: {
-      list: async () => emptyList(),
+      list: async () => listResponse(),
       export: async () => emptyList(),
       get: async () => emptyList(),
     },
