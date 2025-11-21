@@ -102,9 +102,6 @@ const MIME_HANDLERS: Record<string, MimeHandler> = {
     fetchPdfText({ driveClient, fileId, accessToken, logger }),
 };
 
-export const isTextSupportedMime = (mimeType: string | undefined): boolean =>
-  Boolean(mimeType && MIME_HANDLERS[mimeType]);
-
 export type ExtractTextOrSkipOptions = {
   driveClient: GoogleDriveClient;
   fileMeta: DriveFileEntry;

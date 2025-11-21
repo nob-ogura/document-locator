@@ -1,10 +1,11 @@
 import type { GoogleDriveClient, SupabaseClient } from "./clients.ts";
 import { createExternalClients } from "./clients.ts";
-import type { CrawlMode } from "./drive.ts";
+import { type CrawlMode, type DriveFileEntry, listDriveFilesPaged } from "./drive.ts";
 import type { DriveSyncStateRow } from "./drive_sync_state_repository.ts";
 import { getDriveSyncState } from "./drive_sync_state_repository.ts";
 import type { AppConfig, CrawlerMode } from "./env.ts";
 import { createLogger, type Logger } from "./logger.ts";
+import { isTextSupportedMime } from "./mime.ts";
 
 export type ResolvedCrawlMode = Exclude<CrawlMode, "auto">;
 
@@ -115,5 +116,49 @@ export const runCrawler = async (options: RunCrawlerOptions): Promise<RunCrawler
       googleDrive,
       supabase,
     },
+  };
+};
+
+export type EnumerateDriveFilesResult = RunCrawlerResult & {
+  files: DriveFileEntry[];
+  processable: DriveFileEntry[];
+  skipped: DriveFileEntry[];
+};
+
+export const enumerateDriveFiles = async (
+  options: RunCrawlerOptions,
+): Promise<EnumerateDriveFilesResult> => {
+  const context = await runCrawler(options);
+  const { googleDrive, supabase } = context.clients;
+  const { limit } = options;
+  const logger = options.deps?.logger ?? googleDrive.logger;
+
+  await googleDrive.folders.ensureTargetsExist();
+
+  const files = await listDriveFilesPaged({
+    driveClient: googleDrive,
+    supabaseClient: supabase,
+    mode: context.effectiveMode,
+    logger,
+  });
+
+  const processable: DriveFileEntry[] = [];
+  const skipped: DriveFileEntry[] = [];
+
+  for (const file of files) {
+    if (isTextSupportedMime(file.mimeType)) {
+      if (limit === undefined || processable.length < limit) {
+        processable.push(file);
+      }
+      continue;
+    }
+    skipped.push(file);
+  }
+
+  return {
+    ...context,
+    files,
+    processable,
+    skipped,
   };
 };

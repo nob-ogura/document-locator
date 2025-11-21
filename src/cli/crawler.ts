@@ -1,6 +1,6 @@
 import { Command, InvalidArgumentError } from "commander";
-import type { SupabaseClient } from "../clients.ts";
-import { runCrawler } from "../crawler.ts";
+import type { GoogleDriveClient, SupabaseClient } from "../clients.ts";
+import { enumerateDriveFiles } from "../crawler.ts";
 import { type CrawlerMode, loadEnv } from "../env.ts";
 import { createLogger, type Logger } from "../logger.ts";
 
@@ -42,6 +42,31 @@ const createMockSupabaseClient = (logger: Logger, driveModifiedAt?: string): Sup
   };
 };
 
+const createMockGoogleDriveClient = (logger: Logger): GoogleDriveClient => {
+  const emptyList = new Response(JSON.stringify({ files: [] }), {
+    status: 200,
+    headers: { "Content-Type": "application/json" },
+  });
+
+  return {
+    logger,
+    targetFolderIds: ["mock-folder"],
+    credentials: {
+      clientId: "mock-client-id",
+      clientSecret: "mock-client-secret",
+      refreshToken: "mock-refresh-token",
+    },
+    request: async () => emptyList,
+    auth: { fetchAccessToken: async () => "mock-access-token" },
+    folders: { ensureTargetsExist: async () => undefined },
+    files: {
+      list: async () => emptyList,
+      export: async () => emptyList,
+      get: async () => emptyList,
+    },
+  };
+};
+
 const program = new Command();
 
 program
@@ -58,17 +83,20 @@ program
       const logger = createLogger(config.logLevel);
       logger.info("crawler: starting", { mode, limit: limit ?? null });
 
-      const supabase = shouldUseMockSupabase()
+      const useMock = shouldUseMockSupabase();
+      const supabase = useMock
         ? createMockSupabaseClient(logger, process.env.MOCK_DRIVE_MODIFIED_AT)
         : undefined;
+      const googleDrive = useMock ? createMockGoogleDriveClient(logger) : undefined;
 
-      const result = await runCrawler({
+      const result = await enumerateDriveFiles({
         config,
         mode,
         limit,
         deps: {
           logger,
           supabase,
+          googleDrive,
         },
       });
 
@@ -77,6 +105,13 @@ program
         effectiveMode: result.effectiveMode,
         driveQuery: result.driveQuery ?? null,
         driveModifiedAt: result.syncState?.drive_modified_at ?? null,
+      });
+
+      logger.info("crawler: drive files enumerated", {
+        total: result.files.length,
+        processable: result.processable.length,
+        skipped: result.skipped.length,
+        limit: limit ?? null,
       });
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
