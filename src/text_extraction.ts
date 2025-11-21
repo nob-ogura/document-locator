@@ -1,4 +1,3 @@
-import pdfParse from "pdf-parse";
 import type { GoogleDriveClient } from "./clients.ts";
 import type { DriveFileEntry } from "./drive.ts";
 import type { Logger } from "./logger.ts";
@@ -74,6 +73,7 @@ export const fetchPdfText = async (options: FetchPdfTextOptions): Promise<string
   await ensureGetOk(response, fileId);
 
   const buffer = Buffer.from(await response.arrayBuffer());
+  const pdfParse = await importPdfParse();
   const parsed = await pdfParse(buffer);
 
   const text = typeof parsed === "string" ? parsed : (parsed?.text ?? "");
@@ -141,4 +141,15 @@ export const extractTextOrSkip = async (
     accessToken,
     logger: effectiveLogger,
   });
+};
+
+type PdfParseFn = (dataBuffer: Buffer) => Promise<{ text?: string } | string>;
+
+const importPdfParse = async (): Promise<PdfParseFn> => {
+  const mod = await import("pdf-parse");
+  const fn = (mod as { default?: unknown }).default ?? (mod as unknown);
+  if (typeof fn !== "function") {
+    throw new Error("pdf-parse module did not export a callable function");
+  }
+  return fn as PdfParseFn;
 };

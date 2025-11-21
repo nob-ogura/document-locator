@@ -6,6 +6,7 @@ import { getDriveSyncState } from "./drive_sync_state_repository.ts";
 import type { AppConfig, CrawlerMode } from "./env.ts";
 import { createLogger, type Logger } from "./logger.ts";
 import { isTextSupportedMime } from "./mime.ts";
+import { extractTextOrSkip } from "./text_extraction.ts";
 
 export type ResolvedCrawlMode = Exclude<CrawlMode, "auto">;
 
@@ -125,6 +126,15 @@ export type EnumerateDriveFilesResult = RunCrawlerResult & {
   skipped: DriveFileEntry[];
 };
 
+export type ExtractedDriveFile = DriveFileEntry & {
+  text: string | null;
+  error?: string;
+};
+
+export type ExtractDriveTextsResult = EnumerateDriveFilesResult & {
+  extracted: ExtractedDriveFile[];
+};
+
 export const enumerateDriveFiles = async (
   options: RunCrawlerOptions,
 ): Promise<EnumerateDriveFilesResult> => {
@@ -152,6 +162,11 @@ export const enumerateDriveFiles = async (
       }
       continue;
     }
+    logger?.info("skip: unsupported mime_type", {
+      mimeType: file.mimeType,
+      fileId: file.id,
+      fileName: file.name,
+    });
     skipped.push(file);
   }
 
@@ -161,4 +176,36 @@ export const enumerateDriveFiles = async (
     processable,
     skipped,
   };
+};
+
+export const extractDriveTexts = async (
+  options: RunCrawlerOptions,
+): Promise<ExtractDriveTextsResult> => {
+  const enumeration = await enumerateDriveFiles(options);
+  const { googleDrive } = enumeration.clients;
+  const logger = options.deps?.logger ?? googleDrive.logger;
+
+  const extracted: ExtractedDriveFile[] = [];
+
+  for (const file of enumeration.processable) {
+    try {
+      const text = await extractTextOrSkip({
+        driveClient: googleDrive,
+        fileMeta: file,
+        logger,
+      });
+      extracted.push({ ...file, text });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      logger?.info("text extraction failed; continuing", {
+        fileId: file.id,
+        fileName: file.name,
+        mimeType: file.mimeType,
+        error: message,
+      });
+      extracted.push({ ...file, text: null, error: message });
+    }
+  }
+
+  return { ...enumeration, extracted };
 };
