@@ -16,6 +16,7 @@ const baseEnv = {
   SUPABASE_URL: "https://example.supabase.co",
   SUPABASE_SERVICE_ROLE_KEY: "service-role",
   OPENAI_API_KEY: "sk-test",
+  SEARCH_USE_MOCK_CLIENTS: "1",
 } satisfies Record<string, string>;
 
 type CliResult = {
@@ -42,7 +43,7 @@ const runSearchCli = (
 };
 
 describe("search CLI", () => {
-  it("クエリとフィルタをパースする", () => {
+  it("クエリとフィルタ、類似度と件数をパースする", () => {
     const result = runSearchCli([
       "--",
       "--after",
@@ -51,6 +52,10 @@ describe("search CLI", () => {
       "2024-09-30",
       "--mime",
       "application/pdf",
+      "--similarity",
+      "0.72",
+      "--limit",
+      "40",
       "--json",
       "レポート",
     ]);
@@ -61,6 +66,8 @@ describe("search CLI", () => {
       query: string;
       filters: { after?: string; before?: string; mime?: string };
       searchMaxLoopCount: number;
+      similarityThreshold: number;
+      limit: number;
     };
 
     expect(payload.query).toBe("レポート");
@@ -68,6 +75,8 @@ describe("search CLI", () => {
     expect(payload.filters.before).toBe("2024-09-30");
     expect(payload.filters.mime).toBe("application/pdf");
     expect(payload.searchMaxLoopCount).toBe(3);
+    expect(payload.similarityThreshold).toBeCloseTo(0.72);
+    expect(payload.limit).toBe(40);
   });
 
   it("必須環境変数が欠落していればエラー終了する", () => {
@@ -86,7 +95,7 @@ describe("search CLI", () => {
 
   it("結果を番号付きで要約とリンクを指定フォーマットで表示する", () => {
     const result = runSearchCli(["--", "フォーマット検証"], {
-      SEARCH_MOCK_DRIVE_FILE_COUNT: "3",
+      SEARCH_MOCK_VECTOR_HITS: "3",
       SUMMARY_MAX_LENGTH: "10",
     });
 
@@ -112,13 +121,13 @@ describe("search CLI", () => {
   });
 
   it("101件以上かつループ上限に達したら警告を表示する", () => {
-    const result = runSearchCli(["--", "大量ヒット"], {
-      SEARCH_MOCK_DRIVE_FILE_COUNT: "120",
+    const result = runSearchCli(["--", "--limit", "120", "大量ヒット"], {
+      SEARCH_MOCK_VECTOR_HITS: "120",
       SEARCH_MAX_LOOP_COUNT: "1",
     });
 
     expect(result.status).toBe(0);
-    expect(result.stdout).toMatch(/hits:\s*120\s*\(bucket=tooMany\)/);
+    expect(result.stdout).toMatch(/hits:\s*120/);
     expect(result.stdout).toMatch(/10 件以下に絞り込めませんでした/);
   });
 });

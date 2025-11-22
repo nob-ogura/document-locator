@@ -131,6 +131,9 @@ describe("drive_file_index repository", () => {
     expect(body.match_count).toBe(2);
     expect(body.probes).toBe(10);
     expect(body.filter_file_ids).toEqual(["a", "c"]);
+    expect(body.filter_after).toBeNull();
+    expect(body.filter_before).toBeNull();
+    expect(body.filter_mime).toBeNull();
 
     expect(results.map((row) => row.file_id)).toEqual(["a", "c"]);
     expect(results.every((row) => ["a", "c"].includes(row.file_id))).toBe(true);

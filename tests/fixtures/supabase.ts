@@ -111,18 +111,22 @@ export const createSupabaseSearchMock = (options: {
       requests.match.push(body as Record<string, unknown>);
       options.onMatchRequest?.(body as Record<string, unknown>);
 
+      const matchCount = Number.isInteger(body.match_count) ? Number(body.match_count) : null;
+
       const results =
         vectorRows.length > 0
           ? vectorRows.map((row, index) => ({
               ...row,
               distance: row.distance ?? (index + 1) / 100,
             }))
-          : options.rows.slice(0, 3).map((row, index) => ({
+          : options.rows.map((row, index) => ({
               ...row,
               distance: (index + 1) / 100,
             }));
 
-      return new Response(JSON.stringify(results), {
+      const limited = matchCount && matchCount > 0 ? results.slice(0, matchCount) : results;
+
+      return new Response(JSON.stringify(limited), {
         status: 200,
         headers,
       });

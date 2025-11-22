@@ -3,7 +3,7 @@ import { createInterface } from "node:readline/promises";
 
 import { Command, InvalidArgumentError } from "commander";
 
-import type { GoogleDriveClient, SupabaseClient } from "../clients.ts";
+import type { SupabaseClient } from "../clients.ts";
 import type { DriveFileIndexRow } from "../drive_file_index_repository.ts";
 import { loadEnv } from "../env.ts";
 import { createLogger, type Logger } from "../logger.ts";
@@ -36,6 +36,22 @@ const parseMime = (value: string): string => {
   return trimmed;
 };
 
+const parseSimilarity = (value: string): number => {
+  const parsed = Number.parseFloat(value);
+  if (!Number.isFinite(parsed) || parsed <= 0 || parsed > 1) {
+    throw new InvalidArgumentError("similarity must be a float between 0 and 1");
+  }
+  return parsed;
+};
+
+const parseLimit = (value: string): number => {
+  const parsed = Number.parseInt(value, 10);
+  if (!Number.isInteger(parsed) || parsed <= 0) {
+    throw new InvalidArgumentError("limit must be a positive integer");
+  }
+  return parsed;
+};
+
 const buildDriveLink = (fileId: string): string =>
   `https://drive.google.com/open?id=${encodeURIComponent(fileId)}`;
 
@@ -58,79 +74,54 @@ const shouldUseMockClients = (): boolean =>
   process.env.JEST_WORKER_ID !== undefined ||
   process.env.NODE_ENV === "test";
 
-const parseMockDriveCount = (): number => {
-  const raw = process.env.SEARCH_MOCK_DRIVE_FILE_COUNT;
+const parseMockVectorCount = (): number => {
+  const raw = process.env.SEARCH_MOCK_VECTOR_HITS ?? process.env.SEARCH_MOCK_DRIVE_FILE_COUNT;
   if (!raw) return 0;
-
   const parsed = Number.parseInt(raw, 10);
   if (Number.isNaN(parsed) || parsed < 0) return 0;
   return parsed;
 };
 
-const buildMockDriveFiles = () => {
-  const count = parseMockDriveCount();
-  return Array.from({ length: count }, (_, index) => {
+const parseMockTopSimilarity = (): number => {
+  const raw = process.env.SEARCH_MOCK_TOP_SIMILARITY;
+  if (!raw) return 0.9;
+  const parsed = Number.parseFloat(raw);
+  if (!Number.isFinite(parsed) || parsed <= 0 || parsed > 1) return 0.9;
+  return parsed;
+};
+
+const buildMockVectorRows = (count: number, topSimilarity: number): DriveFileIndexRow[] =>
+  Array.from({ length: count }, (_, index) => {
+    const similarity = Math.max(0, Math.min(1, topSimilarity - index * 0.001));
+    const distance = 1 - similarity;
     const suffix = index + 1;
     return {
-      id: `mock-file-${suffix}`,
-      name: `mock-file-${suffix}.pdf`,
-      mimeType: "application/pdf",
-      modifiedTime: new Date(0).toISOString(),
-    };
+      file_id: `mock-file-${suffix}`,
+      file_name: `mock-file-${suffix}.pdf`,
+      summary: `mock summary for file ${suffix}`,
+      keywords: ["mock"],
+      drive_modified_at: new Date(0).toISOString(),
+      mime_type: "application/pdf",
+      similarity,
+      distance,
+    } satisfies DriveFileIndexRow;
   });
-};
-
-const createMockGoogleDriveClient = (logger: Logger): GoogleDriveClient => {
-  const headers = { "Content-Type": "application/json" };
-  const emptyList = () => new Response(JSON.stringify({ files: [] }), { status: 200, headers });
-  const mockFiles = buildMockDriveFiles();
-
-  const listResponse = () =>
-    mockFiles.length > 0
-      ? new Response(JSON.stringify({ files: mockFiles }), { status: 200, headers })
-      : emptyList();
-
-  return {
-    logger,
-    targetFolderIds: ["mock-folder"],
-    credentials: {
-      clientId: "mock-client-id",
-      clientSecret: "mock-client-secret",
-      refreshToken: "mock-refresh-token",
-    },
-    request: async () => emptyList(),
-    auth: { fetchAccessToken: async () => "mock-access-token" },
-    folders: { ensureTargetsExist: async () => undefined },
-    files: {
-      list: async () => listResponse(),
-      export: async () => emptyList(),
-      get: async () => emptyList(),
-    },
-  };
-};
 
 const createMockSupabaseClient = (logger: Logger): SupabaseClient => {
   const headers = { "Content-Type": "application/json" };
+  const mockCount = parseMockVectorCount();
+  const topSimilarity = parseMockTopSimilarity();
 
   return {
     logger,
     credentials: { url: "mock://supabase", serviceRoleKey: "mock-service-role" },
-    request: async (input) => {
-      const raw = typeof input === "string" ? input : "";
-      if (raw.startsWith("/rest/v1/drive_file_index")) {
-        const params = new URL(raw, "https://mock.supabase").searchParams;
-        const filter = params.get("file_id") ?? "";
-        const decoded = decodeURIComponent(filter);
-        const ids = Array.from(decoded.matchAll(/"([^"]+)"/g)).map(([, id]) => id);
+    request: async (input, init) => {
+      const url = typeof input === "string" ? input : "";
 
-        const rows: DriveFileIndexRow[] = ids.map((id) => ({
-          file_id: id,
-          file_name: `mock-${id}`,
-          summary: `mock summary for ${id}`,
-          keywords: ["mock"],
-          drive_modified_at: new Date(0).toISOString(),
-          mime_type: "application/pdf",
-        }));
+      if (url.includes("match_drive_file_index")) {
+        const body = typeof init?.body === "string" ? JSON.parse(init.body) : {};
+        const limit = Number.isInteger(body?.match_count) ? body.match_count : mockCount;
+        const rows = buildMockVectorRows(Math.min(mockCount, limit ?? mockCount), topSimilarity);
         return new Response(JSON.stringify(rows), { status: 200, headers });
       }
 
@@ -148,14 +139,12 @@ const promptUserRefinement = async (question: string): Promise<string> => {
 
 type SearchCliOptions = SearchFilters & {
   json?: boolean;
+  similarity?: number;
+  limit?: number;
 };
 
-const buildQueryString = (parts: string | string[]): string => {
-  if (Array.isArray(parts)) {
-    return parts.join(" ").trim();
-  }
-  return parts.trim();
-};
+const buildQueryString = (parts: string | string[]): string =>
+  Array.isArray(parts) ? parts.join(" ").trim() : parts.trim();
 
 const program = new Command();
 
@@ -166,6 +155,8 @@ program
   .option("--after <date>", "filter results modified after date (YYYY-MM-DD)", parseIsoDate)
   .option("--before <date>", "filter results modified before date (YYYY-MM-DD)", parseIsoDate)
   .option("--mime <type>", "filter by MIME type", parseMime)
+  .option("--similarity <float>", "initial similarity threshold (default: 0.70)", parseSimilarity)
+  .option("--limit <n>", "maximum candidates to fetch (default: 80)", parseLimit)
   .option("--json", "output parsed payload as JSON (debug)")
   .action(async (queryParts: string[], options: SearchCliOptions) => {
     let logger: Logger | undefined;
@@ -183,10 +174,15 @@ program
         mime: options.mime,
       };
 
+      const similarityThreshold = options.similarity ?? 0.7;
+      const limit = options.limit ?? 80;
+
       const request: SearchRequest = {
         query,
         filters,
         searchMaxLoopCount: config.searchMaxLoopCount,
+        limit,
+        similarityThreshold,
       };
 
       if (options.json) {
@@ -201,10 +197,11 @@ program
         before: filters.before ?? null,
         mime: filters.mime ?? null,
         loops: request.searchMaxLoopCount,
+        similarity: request.similarityThreshold,
+        limit: request.limit,
       });
 
       const useMock = shouldUseMockClients();
-      const googleDrive = useMock ? createMockGoogleDriveClient(logger) : undefined;
       const openai = useMock ? createMockOpenAIClient({ logger }) : undefined;
       const supabase = useMock ? createMockSupabaseClient(logger) : undefined;
 
@@ -212,7 +209,6 @@ program
         config,
         request,
         deps: {
-          googleDrive,
           openai,
           supabase,
           logger,
@@ -220,19 +216,17 @@ program
         },
       });
 
-      logger.info("search: branching outcome", {
+      logger.info("search: outcome", {
         keywordCount: result.initial.keywords.length,
-        driveQuery: result.initial.driveQuery,
         hits: result.initial.hitCount,
         bucket: result.initial.bucket,
         branch: `${result.initial.bucket}->${result.finalBucket}`,
         iteration: result.initial.iteration,
-        retries: Math.max(result.initial.iteration - 1, 0),
-        loopLimitReached: result.initial.loopLimitReached,
+        loopLimitReached: result.loopLimitReached,
         mock: useMock,
         vectorApplied: result.vectorSearchApplied,
-        finalBucket: result.finalBucket,
         reranked: result.reranked,
+        topSimilarity: result.topSimilarity,
       });
 
       const keywordsLine =
@@ -242,16 +236,12 @@ program
 
       const lines = [
         keywordsLine,
-        `hits: ${result.initial.hitCount} (bucket=${result.initial.bucket})`,
-        result.vectorSearchApplied
+        `hits: ${result.initial.hitCount} (bucket=${result.initial.bucket}, top=${result.initial.topSimilarity.toFixed(2)}, threshold=${result.initial.similarityThreshold.toFixed(2)})`,
+        result.results.length > 0
           ? `vector hits: ${result.results.length} (bucket=${result.finalBucket})`
           : undefined,
-        result.initial.loopLimitReached && result.initial.bucket === "tooMany"
-          ? "10 件以下に絞り込めませんでした"
-          : undefined,
-        result.initial.bucket === "none" &&
-        result.initial.hitCount === 0 &&
-        result.initial.keywords.length <= 1
+        result.loopLimitReached ? "10 件以下に絞り込めませんでした" : undefined,
+        result.results.length === 0 && result.finalKeywords.length <= 1
           ? "見つかりませんでした"
           : undefined,
       ].filter((line): line is string => Boolean(line));

@@ -32,6 +32,11 @@ export type VectorSearchOptions = {
   limit?: number;
   probes?: number;
   filterFileIds?: string[];
+  filters?: {
+    after?: string;
+    before?: string;
+    mime?: string;
+  };
 };
 
 const DEFAULT_VECTOR_LIMIT = 20;
@@ -123,6 +128,9 @@ export const vectorSearchDriveFileIndex = async (
       probes,
       filter_file_ids:
         options.filterFileIds && options.filterFileIds.length > 0 ? options.filterFileIds : null,
+      filter_after: options.filters?.after ?? null,
+      filter_before: options.filters?.before ?? null,
+      filter_mime: options.filters?.mime ?? null,
     }),
   });
 
