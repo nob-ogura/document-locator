@@ -16,6 +16,13 @@ type FetchPdfTextOptions = {
   logger?: Logger;
 };
 
+type FetchDocxTextOptions = {
+  driveClient: GoogleDriveClient;
+  fileId: string;
+  accessToken?: string;
+  logger?: Logger;
+};
+
 const ensureExportOk = async (response: Response, fileId: string): Promise<void> => {
   if (response.ok) return;
 
@@ -30,7 +37,7 @@ const ensureExportOk = async (response: Response, fileId: string): Promise<void>
   throw new Error(`Failed to export Google Doc ${fileId}: HTTP ${response.status}${detail}`);
 };
 
-const ensureGetOk = async (response: Response, fileId: string): Promise<void> => {
+const ensureGetOk = async (response: Response, fileId: string, label: string): Promise<void> => {
   if (response.ok) return;
 
   let detail = "";
@@ -41,7 +48,7 @@ const ensureGetOk = async (response: Response, fileId: string): Promise<void> =>
     // ignore parse errors
   }
 
-  throw new Error(`Failed to fetch PDF ${fileId}: HTTP ${response.status}${detail}`);
+  throw new Error(`Failed to fetch ${label} ${fileId}: HTTP ${response.status}${detail}`);
 };
 
 /**
@@ -70,7 +77,7 @@ export const fetchPdfText = async (options: FetchPdfTextOptions): Promise<string
   const { driveClient, fileId, accessToken, logger } = options;
 
   const response = await driveClient.files.get(fileId, { accessToken, alt: "media" });
-  await ensureGetOk(response, fileId);
+  await ensureGetOk(response, fileId, "pdf");
 
   const buffer = Buffer.from(await response.arrayBuffer());
   const pdfParse = await importPdfParse();
@@ -86,7 +93,30 @@ export const fetchPdfText = async (options: FetchPdfTextOptions): Promise<string
   return text;
 };
 
-export type { FetchGoogleDocTextOptions, FetchPdfTextOptions };
+/**
+ * docx を Drive から取得し、mammoth でプレーンテキスト化する。
+ */
+export const fetchDocxText = async (options: FetchDocxTextOptions): Promise<string> => {
+  const { driveClient, fileId, accessToken, logger } = options;
+
+  const response = await driveClient.files.get(fileId, { accessToken, alt: "media" });
+  await ensureGetOk(response, fileId, "docx");
+
+  const buffer = Buffer.from(await response.arrayBuffer());
+  const extractRawText = await importMammoth();
+  const parsed = await extractRawText({ buffer });
+
+  const text = typeof parsed === "string" ? parsed : (parsed?.value ?? "");
+
+  if (text.length === 0) {
+    logger?.error("docx parse returned empty text", { fileId });
+    throw new Error(`docx ${fileId} returned empty text`);
+  }
+
+  return text;
+};
+
+export type { FetchGoogleDocTextOptions, FetchPdfTextOptions, FetchDocxTextOptions };
 
 type MimeHandler = (params: {
   driveClient: GoogleDriveClient;
@@ -98,6 +128,12 @@ type MimeHandler = (params: {
 const MIME_HANDLERS: Record<string, MimeHandler> = {
   "application/vnd.google-apps.document": ({ driveClient, fileId, accessToken, logger }) =>
     fetchGoogleDocText({ driveClient, fileId, accessToken, logger }),
+  "application/vnd.openxmlformats-officedocument.wordprocessingml.document": ({
+    driveClient,
+    fileId,
+    accessToken,
+    logger,
+  }) => fetchDocxText({ driveClient, fileId, accessToken, logger }),
   "application/pdf": ({ driveClient, fileId, accessToken, logger }) =>
     fetchPdfText({ driveClient, fileId, accessToken, logger }),
 };
@@ -111,7 +147,7 @@ export type ExtractTextOrSkipOptions = {
 
 /**
  * テキスト抽出可能な MIME のみを処理し、それ以外はスキップとしてログに記録する。
- * サポート対象: Google ドキュメント, PDF
+ * サポート対象: Google ドキュメント, docx, PDF
  */
 export const extractTextOrSkip = async (
   options: ExtractTextOrSkipOptions,
@@ -141,6 +177,24 @@ export const extractTextOrSkip = async (
     accessToken,
     logger: effectiveLogger,
   });
+};
+
+type MammothExtractResult = { value?: string | null };
+type MammothExtractFn = (params: { buffer: Buffer }) => Promise<MammothExtractResult | string>;
+
+const importMammoth = async (): Promise<MammothExtractFn> => {
+  const mod = await import("mammoth");
+  const candidate = (mod as { default?: unknown }).default ?? (mod as unknown);
+
+  const extractRawText =
+    (candidate as { extractRawText?: unknown }).extractRawText ??
+    (mod as { extractRawText?: unknown }).extractRawText;
+
+  if (typeof extractRawText === "function") {
+    return extractRawText as MammothExtractFn;
+  }
+
+  throw new Error("mammoth module did not export extractRawText");
 };
 
 type PdfParseFn = (dataBuffer: Buffer) => Promise<{ text?: string } | string>;

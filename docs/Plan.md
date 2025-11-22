@@ -32,8 +32,8 @@
 - DOD: ローカル環境で SQL を適用できること（dry-run でも可）、Supabase ラッパーが型安全に動くこと。
 
 ### 4. Google Drive 取得・テキスト抽出基盤
-- タスク: 認証済み Drive クライアント（ターゲットフォルダ限定ユーティリティ）、`files.list` ページング、差分/フル判定ロジック骨格。文書: `files.export(text/plain)`、PDF: `files.get` + `pdf-parse`。非テキスト（画像/zip 等）スキップ。429/5xx バックオフ共通利用。
-- DOD: サンプルフォルダで一覧取得と PDF/Doc のテキスト抽出が成功し、非対応 MIME はスキップログを出す。
+- タスク: 認証済み Drive クライアント（ターゲットフォルダ限定ユーティリティ）、`files.list` ページング、差分/フル判定ロジック骨格。テキスト抽出対象: Google ドキュメント (`files.export(text/plain)`)、PDF (`files.get` + `pdf-parse`)、Microsoft Word .docx (`files.get` + `mammoth` 等)、プレーンテキスト/Markdown/CSV (`files.get` UTF-8 文字列)、Google スプレッドシート (`files.export(text/csv)` で CSV 変換)。非テキスト（画像/zip 等）スキップ。429/5xx バックオフ共通利用。
+- DOD: サンプルフォルダで一覧取得と Doc/PDF/docx/txt/md/csv/Sheet のテキスト抽出が成功し、非対応 MIME はスキップログを出す。
 
 ### 5. OpenAI ラッパー（要約/キーワード/embedding）
 - タスク: GPT-4o mini への要約（`SUMMARY_MAX_LENGTH` 準拠でトランケート）、キーワード抽出（JSON 配列 3–5 件）、Embedding 生成（text-embedding-3-small 1536 次元）。呼び出しは温度 0、max_tokens 低め。レートリミット時は共通リトライ利用。デバッグ用に token 使用量ログを残す。

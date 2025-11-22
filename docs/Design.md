@@ -57,6 +57,9 @@ PoC の目的は「ヒット件数に応じて検索手段を切り替えるハ�
   3. テキスト抽出  
      - Google ドキュメント: `files.export`(mimeType=text/plain)  
      - PDF: `files.get`(alt=media) でバイナリ取得 → `pdf-parse` でテキスト抽出（`files.export` は PDF では 400 になるため使用しない）  
+     - Microsoft Word (.docx): `files.get`(alt=media) でバイナリ取得 → `mammoth` 等でプレーンテキスト化  
+     - プレーンテキスト/Markdown/CSV: MIME `text/plain` / `text/markdown` / `text/csv` を `files.get` で取得し、そのまま UTF-8 文字列として扱う  
+     - Google スプレッドシート: `files.export`(mimeType=text/csv) で CSV に変換してからテキスト扱い  
      - OCR は非対応。非テキスト対象（画像/zip 等）はスキップ。  
   4. AI 処理  
      - GPT-4o mini: 要約 `summary`（`SUMMARY_MAX_LENGTH` 以内に truncate）、キーワード 3〜5 件。  

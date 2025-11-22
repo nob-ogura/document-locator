@@ -67,3 +67,36 @@ Scenario: Drive API 429 応答で指数バックオフが働く
   Then リトライ間隔が 1 秒 → 2 秒 となり合計 2 回で成功する
   And ロガーにリトライ回数と待機秒が記録される
 ```
+
+## 対象ファイルの追加（docx/txt/md/csv/Sheets 対応）
+1. src/text_extraction.ts に docx / plain / markdown / csv / sheet の handler 実装を追加。
+2. src/mime.ts に対応 MIME を追加。
+3. tests/text_extraction.test.ts へ新しい MIME の取得・エラーケースを加える。
+4. docx 用ライブラリ（例 mammoth）の依存追加とモックを整備。
+
+### T6: docx のテキスト抽出
+- files.get alt=media + mammoth 等でプレーンテキスト化、空文字はエラー扱い
+```
+Scenario: docx をプレーンテキスト化できる
+  Given MIME タイプが "application/vnd.openxmlformats-officedocument.wordprocessingml.document" の Drive ファイルがある
+  When fetchDocxText(fileId) が files.get(fileId, { alt: "media" }) でバイナリを取得し mammoth に渡す
+  Then 本文が非空文字列として返る
+```
+
+### T7: プレーンテキスト/Markdown/CSV の抽出
+- MIME text/plain, text/markdown, text/csv を files.get で取得し UTF-8 文字列として返す
+```
+Scenario: text/plain / text/markdown / text/csv をそのまま取得する
+  Given MIME タイプが text/plain, text/markdown, text/csv の Drive ファイルがある
+  When fetchPlainLikeText(fileId) が files.get(fileId, { alt: "media" }) を呼ぶ
+  Then UTF-8 文字列がそのまま返り、空ならエラーになる
+```
+
+### T8: Google スプレッドシートの抽出
+- files.export text/csv で取得し文字列として扱う、空文字はエラー扱い
+```
+Scenario: Google スプレッドシートを CSV にエクスポートして取得する
+  Given MIME タイプが "application/vnd.google-apps.spreadsheet" の Drive ファイルがある
+  When fetchSheetText(fileId) が files.export(fileId, "text/csv") を呼び出す
+  Then CSV 文字列が返り、空ならエラーとして扱われる
+```
