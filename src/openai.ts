@@ -166,7 +166,7 @@ export const summarizeText = async (options: SummarizeTextOptions): Promise<stri
     messages: [
       {
         role: "system",
-        content: `Summarize the user's text in plain language within ${targetLength} characters. Do not exceed ${targetLength} characters.`,
+        content: `ユーザーのテキストを${targetLength}文字以内で要約しなさい。体言止めを中心に記述すること。${targetLength}文字を超えてはならない。`,
       },
       { role: "user", content: text },
     ],
