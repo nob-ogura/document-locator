@@ -15,14 +15,14 @@ Scenario: クエリとフィルタを正しくパースする
 ```
 
 ### 2. キーワード抽出と初期 Drive 検索
-- GPT-4o mini で 3–5 件のキーワードを JSON 配列で抽出（固有名詞優先、`temperature=0`）。  
+- GPT-4o mini で 1–5 件のキーワードを JSON 配列で抽出（固有名詞優先、`temperature=0`）。  
 - Drive API を `GOOGLE_DRIVE_TARGET_FOLDER_IDS` 配下に限定し、期間/MIME フィルタとキーワードを適用して検索。
 - Gherkin:
 ```gherkin
 Scenario: クエリからキーワードを抽出し Drive を初期検索する
   Given クエリ "週次レポート 9月 売上" がある
   When search コマンドを実行する
-  Then GPT-4o mini に 3〜5 件のキーワード抽出を依頼する
+  Then GPT-4o mini に 1〜5 件のキーワード抽出を依頼する
   And Drive 検索ではターゲットフォルダ限定で期間と MIME フィルタを適用する
   And 抽出したキーワードが空配列の場合は Drive 検索はクエリ文字列のみで行う
 ```

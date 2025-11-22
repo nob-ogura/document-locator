@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 
 import type { OpenAIChatResponse, OpenAIClient } from "../src/clients.js";
-import { extractKeywords } from "../src/openai.js";
+import { extractKeywords, KEYWORDS_MAX_LENGTH } from "../src/openai.js";
 
 type ChatCreate = OpenAIClient["chat"]["completions"]["create"];
 
@@ -27,7 +27,7 @@ const createOpenAIMock = (content: string) => {
 };
 
 describe("extractKeywords", () => {
-  it("model/temperature/max_tokens を設定し、非 JSON 出力を 3〜5 件の配列に補正する", async () => {
+  it("model/temperature/max_tokens を設定し、非 JSON 出力を許容範囲の配列に補正する", async () => {
     const { openai, create } = createOpenAIMock("Keywords: foo, bar, baz");
 
     const keywords = await extractKeywords({
@@ -48,7 +48,7 @@ describe("extractKeywords", () => {
     expect(keywords).toEqual(["foo", "bar", "baz"]);
   });
 
-  it("6 件など多すぎる場合は 5 件にトリムする", async () => {
+  it("多すぎる場合は上限にトリムする", async () => {
     const { openai } = createOpenAIMock('["a","b","c","d","e","f"]');
 
     const keywords = await extractKeywords({
@@ -56,11 +56,11 @@ describe("extractKeywords", () => {
       text: "input",
     });
 
-    expect(keywords).toEqual(["a", "b", "c", "d", "e"]);
+    expect(keywords).toEqual(["a", "b", "c", "d", "e"].slice(0, KEYWORDS_MAX_LENGTH));
   });
 
-  it("3 件未満しか取得できない場合は例外を送出する", async () => {
-    const { openai } = createOpenAIMock('["one","two"]');
+  it("下限未満しか取得できない場合は例外を送出する", async () => {
+    const { openai } = createOpenAIMock("[]");
 
     await expect(
       extractKeywords({

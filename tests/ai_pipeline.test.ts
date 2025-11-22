@@ -12,6 +12,7 @@ import type {
 import { runAiPipeline } from "../src/crawler.js";
 import * as syncRepo from "../src/drive_sync_state_repository.js";
 import type { AppConfig } from "../src/env.js";
+import { KEYWORDS_MIN_LENGTH, KEYWORDS_PROMPT_REGEX } from "../src/openai.js";
 import * as textExtraction from "../src/text_extraction.js";
 
 const baseConfig: AppConfig = {
@@ -72,7 +73,8 @@ const createOpenAIMock = () => {
   type EmbeddingsCreate = OpenAIClient["embeddings"]["create"];
 
   const summaryContent = "S".repeat(500);
-  const keywordsContent = JSON.stringify(["alpha", "beta", "gamma"]);
+  const keywords = Array.from({ length: KEYWORDS_MIN_LENGTH }, (_, index) => `alpha-${index + 1}`);
+  const keywordsContent = JSON.stringify(keywords);
 
   const logger = {
     debug: vi.fn(),
@@ -83,7 +85,7 @@ const createOpenAIMock = () => {
   const chatCreate = vi.fn<ChatCreate>().mockImplementation(async (payload: OpenAIChatRequest) => {
     const systemMessage = payload.messages[0]?.content ?? "";
     const isKeywordRequest =
-      typeof systemMessage === "string" && /Extract 3 to 5 short keywords/i.test(systemMessage);
+      typeof systemMessage === "string" && KEYWORDS_PROMPT_REGEX.test(systemMessage);
 
     const content = isKeywordRequest ? keywordsContent : summaryContent;
 
@@ -117,11 +119,11 @@ const createOpenAIMock = () => {
     },
   } satisfies OpenAIClient;
 
-  return { openai, chatCreate, embeddingsCreate, embeddingVector };
+  return { openai, chatCreate, embeddingsCreate, embeddingVector, keywords };
 };
 
 describe("runAiPipeline", () => {
-  it("generates summary, 3-5 keywords, and embedding per file with SUMMARY_MAX_LENGTH enforcement", async () => {
+  it("generates summary, keywords within range, and embedding per file with SUMMARY_MAX_LENGTH enforcement", async () => {
     vi.spyOn(syncRepo, "getDriveSyncState").mockResolvedValue(null);
 
     const listMock = vi
@@ -136,7 +138,7 @@ describe("runAiPipeline", () => {
 
     const driveClient = createDriveClient(listMock);
     const supabaseClient = createSupabaseClient();
-    const { openai, chatCreate, embeddingsCreate, embeddingVector } = createOpenAIMock();
+    const { openai, chatCreate, embeddingsCreate, embeddingVector, keywords } = createOpenAIMock();
 
     const result = await runAiPipeline({
       config: baseConfig,
@@ -154,7 +156,7 @@ describe("runAiPipeline", () => {
     const processed = result.processed[0];
 
     expect(processed.summary).toHaveLength(baseConfig.summaryMaxLength);
-    expect(processed.keywords).toEqual(["alpha", "beta", "gamma"]);
+    expect(processed.keywords).toEqual(keywords);
     expect(processed.embedding).toEqual(embeddingVector);
     expect(processed.aiError).toBeUndefined();
 

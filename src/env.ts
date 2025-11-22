@@ -64,7 +64,8 @@ const loadDotEnvFile = (): Record<string, string> => {
 };
 
 export function loadEnv(env: NodeJS.ProcessEnv = process.env): AppConfig {
-  const fromFile = loadDotEnvFile();
+  const shouldLoadDotEnv = env === process.env;
+  const fromFile: Record<string, string> = shouldLoadDotEnv ? loadDotEnvFile() : {};
   const merged: Record<string, string | undefined> = {
     ...fromFile,
     ...env,

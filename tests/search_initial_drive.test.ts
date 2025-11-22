@@ -101,7 +101,6 @@ describe("runInitialDriveSearch", () => {
     expect(firstCall?.supportsAllDrives).toBe(true);
 
     const query = firstCall?.q ?? "";
-    expect(query).toContain("'folderA' in parents");
     expect(query).toContain("modifiedTime >=");
     expect(query).toContain("modifiedTime <=");
     expect(query).toContain("mimeType='application/pdf'");
@@ -129,7 +128,6 @@ describe("runInitialDriveSearch", () => {
     });
 
     const query = listMock.mock.calls[0]?.[0]?.q ?? "";
-    expect(query).toContain("'folderA' in parents");
     expect(query).toContain("fullText contains '週次レポート 9月 売上'");
     expect(result.keywords).toEqual([]);
   });

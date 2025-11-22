@@ -8,6 +8,7 @@ import {
 } from "./clients.ts";
 import type { AppConfig } from "./env.ts";
 import { createLogger, type Logger } from "./logger.ts";
+import { KEYWORDS_PROMPT_REGEX } from "./openai.ts";
 
 const MOCK_EMBEDDING_DIMENSION = 1536;
 const MOCK_KEYWORDS = ["mock", "openai", "ci"];
@@ -21,7 +22,9 @@ const buildMockEmbeddingVector = (): number[] =>
 const buildMockChatResponse = (payload: OpenAIChatRequest): OpenAIChatResponse => {
   const isKeywordRequest = payload.messages.some(
     (message) =>
-      message.role === "system" && /Extract 3 to 5 short keywords/i.test(message.content),
+      message.role === "system" &&
+      typeof message.content === "string" &&
+      KEYWORDS_PROMPT_REGEX.test(message.content),
   );
 
   const content = isKeywordRequest ? JSON.stringify(MOCK_KEYWORDS) : "Mock summary response";

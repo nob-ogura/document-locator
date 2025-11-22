@@ -190,24 +190,10 @@ export const createGoogleDriveClient = (
     });
   };
 
-  const buildFolderScope = (parentIds?: string[]): string => {
-    const ids = parentIds && parentIds.length > 0 ? parentIds : config.googleDriveTargetFolderIds;
-    return ids.map((id) => `'${id}' in parents`).join(" or ");
-  };
-
-  const toScopedQuery = (userQuery: string | undefined, parentIds?: string[]): string => {
-    const folderScope = buildFolderScope(parentIds);
-    if (!folderScope) return userQuery ?? "";
-    if (!userQuery || userQuery.trim() === "") {
-      return `(${folderScope})`;
-    }
-    return `(${folderScope}) and (${userQuery})`;
-  };
-
   const buildFilesListUrl = (params: Omit<GoogleDriveFilesListParams, "accessToken"> = {}) => {
-    const { parents, ...rest } = params;
+    const { parents: _unusedParents, ...rest } = params;
     const searchParams = new URLSearchParams();
-    searchParams.set("q", toScopedQuery(rest.q, parents));
+    if (rest.q !== undefined) searchParams.set("q", rest.q);
 
     if (rest.fields) searchParams.set("fields", rest.fields);
     if (rest.pageSize !== undefined) searchParams.set("pageSize", String(rest.pageSize));

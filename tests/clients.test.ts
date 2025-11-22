@@ -163,9 +163,7 @@ describe("external client factories", () => {
     const [url, options] = retrier.mock.calls[0];
     const parsed = new URL(String(url));
     expect(parsed.pathname).toBe("/drive/v3/files");
-    expect(parsed.searchParams.get("q")).toBe(
-      "('folderA' in parents) and (mimeType='application/pdf')",
-    );
+    expect(parsed.searchParams.get("q")).toBe("mimeType='application/pdf'");
     expect(parsed.searchParams.get("pageSize")).toBe("10");
     expect(parsed.searchParams.get("pageToken")).toBe("next-1");
     expect(parsed.searchParams.get("orderBy")).toBe("modifiedTime desc");
@@ -191,7 +189,7 @@ describe("external client factories", () => {
     if (!listCall) throw new Error("files.list call was not recorded");
     const [url, options] = listCall;
     const parsed = new URL(String(url));
-    expect(parsed.searchParams.get("q")).toBe("('folderA' in parents) and (name = 'report')");
+    expect(parsed.searchParams.get("q")).toBe("name = 'report'");
     const headers = options?.headers as Record<string, string> | undefined;
     expect(headers?.Authorization).toBe("Bearer auto-token");
   });

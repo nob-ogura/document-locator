@@ -39,8 +39,15 @@ const SUMMARY_MAX_TOKENS = 200;
 const KEYWORDS_MODEL = SUMMARY_MODEL;
 const KEYWORDS_TEMPERATURE = SUMMARY_TEMPERATURE;
 const KEYWORDS_MAX_TOKENS = SUMMARY_MAX_TOKENS;
-const KEYWORDS_MIN_LENGTH = 3;
-const KEYWORDS_MAX_LENGTH = 5;
+export const KEYWORDS_MIN_LENGTH = 1;
+export const KEYWORDS_MAX_LENGTH = 5;
+export const KEYWORDS_SYSTEM_PROMPT =
+  `Extract ${KEYWORDS_MIN_LENGTH} to ${KEYWORDS_MAX_LENGTH} short keywords ` +
+  "that best describe the user's text. Respond ONLY with a JSON array of strings.";
+export const KEYWORDS_PROMPT_REGEX = new RegExp(
+  `Extract\\s+${KEYWORDS_MIN_LENGTH}\\s+to\\s+${KEYWORDS_MAX_LENGTH}\\s+short\\s+keywords`,
+  "i",
+);
 const EMBEDDING_MODEL = "text-embedding-3-small";
 const EMBEDDING_DIMENSION = 1536;
 
@@ -135,7 +142,9 @@ const parseKeywordsContent = (content: string, logger?: Logger): string[] => {
     }
   }
 
-  throw new Error("OpenAI keyword response could not be normalized to 3-5 keywords");
+  throw new Error(
+    `OpenAI keyword response could not be normalized to ${KEYWORDS_MIN_LENGTH}-${KEYWORDS_MAX_LENGTH} keywords`,
+  );
 };
 
 const isValidEmbeddingVector = (
@@ -188,11 +197,11 @@ export const summarizeText = async (options: SummarizeTextOptions): Promise<stri
 };
 
 /**
- * テキストから 3〜5 件のキーワードを抽出し、JSON 配列に正規化する。
+ * テキストからキーワードを抽出し、JSON 配列に正規化する。
  *
  * - model="gpt-4o-mini", temperature=0, max_tokens<=200 で呼び出す
  * - 非 JSON 出力でもカンマ/改行区切りや "Keywords:" 接頭辞を補正して配列化する
- * - 3 未満の場合は失敗とみなし、5 件を超える場合は 5 件にトリムする
+ * - 下限未満の場合は失敗とみなし、上限を超える場合は上限にトリムする
  */
 export const extractKeywords = async (options: ExtractKeywordsOptions): Promise<string[]> => {
   const { openai, text, logger } = options;
@@ -204,9 +213,7 @@ export const extractKeywords = async (options: ExtractKeywordsOptions): Promise<
     messages: [
       {
         role: "system",
-        content:
-          "Extract 3 to 5 short keywords that best describe the user's text. " +
-          "Respond ONLY with a JSON array of strings.",
+        content: KEYWORDS_SYSTEM_PROMPT,
       },
       { role: "user", content: text },
     ],

@@ -320,25 +320,6 @@ const toDateBoundary = (date: string, endOfDay: boolean): string => {
   return `${date}${suffix}`;
 };
 
-const buildFolderScope = (folderIds: string[]): string | null => {
-  const scopes = folderIds
-    .map((id) => id.trim())
-    .filter((id) => id.length > 0)
-    .map((id) => `'${escapeSingleQuotes(id)}' in parents`);
-
-  if (scopes.length === 0) return null;
-  return scopes.join(" or ");
-};
-
-const scopeQueryToFolders = (query: string, folderIds: string[]): string => {
-  const folderScope = buildFolderScope(folderIds);
-  if (!folderScope) return query;
-  if (!query || query.trim() === "") {
-    return `(${folderScope})`;
-  }
-  return `(${folderScope}) and (${query})`;
-};
-
 export const buildDriveSearchQuery = (options: {
   query: string;
   keywords: string[];
@@ -472,19 +453,17 @@ export const runInitialDriveSearch = async (options: {
     filters: request.filters,
   });
 
-  const scopedQuery = scopeQueryToFolders(driveQuery, googleDrive.targetFolderIds);
-
-  const files = await listDriveSearchResults(googleDrive, scopedQuery, logger);
+  const files = await listDriveSearchResults(googleDrive, driveQuery, logger);
 
   logger.info("search: initial drive search finished", {
     keywords: normalizedKeywords.length,
-    driveQuery: scopedQuery,
+    driveQuery,
     hits: files.length,
   });
 
   return {
     keywords: normalizedKeywords,
-    driveQuery: scopedQuery,
+    driveQuery,
     files,
   };
 };

@@ -6,9 +6,11 @@ import type {
   OpenAIClient,
   OpenAIEmbeddingResponse,
 } from "../../src/clients.ts";
+import { KEYWORDS_MIN_LENGTH, KEYWORDS_PROMPT_REGEX } from "../../src/openai.js";
 import { createTestLogger } from "./logger.ts";
 
-export const defaultKeywords = ["alpha", "beta", "gamma"];
+const baseKeywords = ["alpha", "beta", "gamma", "delta", "epsilon"];
+export const defaultKeywords = baseKeywords.slice(0, KEYWORDS_MIN_LENGTH);
 export const defaultSummary = "mock summary";
 export const embeddingVector = Array.from({ length: 1536 }, (_, index) => (index + 1) / 1536);
 
@@ -34,8 +36,7 @@ export const createOpenAIMock = (options?: {
   const chatCreate = vi.fn<ChatCreate>().mockImplementation(async (payload: OpenAIChatRequest) => {
     const system = payload.messages?.[0]?.content ?? "";
     const user = payload.messages?.[1]?.content ?? "";
-    const isKeywordRequest =
-      typeof system === "string" && /Extract 3 to 5 short keywords/i.test(system);
+    const isKeywordRequest = typeof system === "string" && KEYWORDS_PROMPT_REGEX.test(system);
     const isRelaxRequest =
       typeof system === "string" && system.toString().includes("zero hits. Provide ONE relaxed");
     const isRankingRequest =

@@ -3,7 +3,7 @@
 ## タスク一覧
 - T1: OpenAI クライアントラッパー整備（環境変数検証、gpt-4o-mini/embedding 共通設定、共通バックオフ連携、トークン使用量ログ出力）
 - T2: 要約生成ユーティリティ実装（SUMMARY_MAX_LENGTH 準拠の二重制限 + 文字数トランケート、temperature=0 / max_tokens 低設定）
-- T3: キーワード抽出ユーティリティ実装（JSON 配列 3–5 件を保証し、非 JSON 出力を自動補正するパーサ付き）
+- T3: キーワード抽出ユーティリティ実装（JSON 配列 1–5 件を保証し、非 JSON 出力を自動補正するパーサ付き）
 - T4: Embedding 生成ユーティリティ実装（text-embedding-3-small 1536 次元、summary+keywords+file_name 連結入力と型ガード）
 - T5: 実鍵・実環境スモークとモック切替手順整備（CI は常にモック、手動 1 回のみ実鍵スモークを実施するランブック）
 
@@ -37,10 +37,10 @@ Scenario: 長文を SUMMARY_MAX_LENGTH 以内で要約できる
 
 ### T3: キーワード抽出ユーティリティ
 ```
-Scenario: LLM 出力を JSON 配列 3〜5 件に正規化する
+Scenario: LLM 出力を JSON 配列 1〜5 件に正規化する
   Given extractKeywords(input) を実行し OpenAI から 'Keywords: foo, bar, baz' が返るモックを用意する
   When 関数が出力をパースする
-  Then 戻り値は ["foo","bar","baz"] のような JSON 配列になり、長さは 3〜5 件に収まる
+  Then 戻り値は ["foo","bar","baz"] のような JSON 配列になり、長さは 1〜5 件に収まる
   And model="gpt-4o-mini", temperature=0, max_tokens<=200 で呼び出される
   And JSON でないレスポンスでも補正して配列を返し、失敗時は例外を投げる
 ```

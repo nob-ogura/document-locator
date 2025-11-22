@@ -22,7 +22,7 @@
 ## CI / 実鍵なしでの動作
 - `CI=true` をセットすると自動でモックモードに切替わる。
 - 実鍵やネットワークが無くても `scripts/smoke-openai.ts` は成功し、ログに `mock openai mode enabled` / `mock openai chat` / `mock openai embeddings` が出る。
-- モック応答でも summarizeText / extractKeywords / generateEmbedding が 3–5 件のキーワードと 1536 次元ベクトルを返す。
+- モック応答でも summarizeText / extractKeywords / generateEmbedding が 1–5 件のキーワードと 1536 次元ベクトルを返す。
 
 ## トラブルシュート
 - `OPENAI_API_KEY is required` が出た場合: `.env.production` にキーが入っているか確認。CI を false にする。

@@ -13,10 +13,10 @@
 
 ### T1: ユニットテスト整備
 ```gherkin
-Scenario: キーワード抽出の出力を JSON 配列 3〜5 件に正規化する
+Scenario: キーワード抽出の出力を JSON 配列 1〜5 件に正規化する
   Given extractKeywords が 'Keywords: foo, bar, baz' を返す OpenAI モックを使用している
   When vitest でキーワードユーティリティのテストを実行する
-  Then 戻り値は ["foo","bar","baz"] の JSON 配列になり 3〜5 件に収まる
+  Then 戻り値は ["foo","bar","baz"] の JSON 配列になり 1〜5 件に収まる
   And JSON でないレスポンスは自動補正され、補正不能なら例外が送出される
 
 Scenario: ヒット件数分岐ロジックを 0/1/5/50/120 で網羅する

@@ -6,6 +6,8 @@ import {
   buildEmbeddingInput,
   extractKeywords,
   generateEmbedding,
+  KEYWORDS_MAX_LENGTH,
+  KEYWORDS_MIN_LENGTH,
   summarizeText,
 } from "../src/openai.js";
 import { resolveOpenAIClient } from "../src/openai-provider.js";
@@ -50,8 +52,8 @@ describe("resolveOpenAIClient", () => {
     const embedding = await generateEmbedding({ openai, input: embeddingInput });
 
     expect(summary.length).toBeGreaterThan(0);
-    expect(keywords.length).toBeGreaterThanOrEqual(3);
-    expect(keywords.length).toBeLessThanOrEqual(5);
+    expect(keywords.length).toBeGreaterThanOrEqual(KEYWORDS_MIN_LENGTH);
+    expect(keywords.length).toBeLessThanOrEqual(KEYWORDS_MAX_LENGTH);
     expect(embedding).toHaveLength(1536);
 
     expect(logger.info).toHaveBeenCalledWith(

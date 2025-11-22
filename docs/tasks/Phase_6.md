@@ -64,7 +64,7 @@ Scenario: MIME タイプごとのテキスト抽出
 ```
 
 ### 5. AI 処理パイプライン（要約・キーワード・embedding）
-- GPT-4o mini で要約・キーワード（3–5）生成後、`summary + keywords + file_name` を text-embedding-3-small に渡す。
+- GPT-4o mini で要約・キーワード（1–5）生成後、`summary + keywords + file_name` を text-embedding-3-small に渡す。
 - `SUMMARY_MAX_LENGTH` でトランケート。リトライは共通バックオフを利用。
 - Gherkin:
 ```gherkin
@@ -72,7 +72,7 @@ Scenario: AI パイプラインが要約・キーワード・Embedding を生成
   Given SUMMARY_MAX_LENGTH より長い抽出テキストがある
   When crawler が AI パイプラインを呼び出す
   Then 要約は SUMMARY_MAX_LENGTH 文字に切り詰められる
-  And キーワード配列は 3〜5 件を含む
+  And キーワード配列は 1〜5 件を含む
   And embedding は text-embedding-3-small でファイルごとに 1 回要求される
   And 429 または 5xx のレスポンス時にリトライポリシーが適用される
 ```
