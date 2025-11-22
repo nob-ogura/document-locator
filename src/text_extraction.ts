@@ -30,7 +30,18 @@ type FetchPlainLikeTextOptions = {
   logger?: Logger;
 };
 
-const ensureExportOk = async (response: Response, fileId: string): Promise<void> => {
+type FetchSheetTextOptions = {
+  driveClient: GoogleDriveClient;
+  fileId: string;
+  accessToken?: string;
+  logger?: Logger;
+};
+
+const ensureExportOk = async (
+  response: Response,
+  fileId: string,
+  label: string = "Google Doc",
+): Promise<void> => {
   if (response.ok) return;
 
   let detail = "";
@@ -41,7 +52,7 @@ const ensureExportOk = async (response: Response, fileId: string): Promise<void>
     // ignore parse errors
   }
 
-  throw new Error(`Failed to export Google Doc ${fileId}: HTTP ${response.status}${detail}`);
+  throw new Error(`Failed to export ${label} ${fileId}: HTTP ${response.status}${detail}`);
 };
 
 const ensureGetOk = async (response: Response, fileId: string, label: string): Promise<void> => {
@@ -65,13 +76,32 @@ export const fetchGoogleDocText = async (options: FetchGoogleDocTextOptions): Pr
   const { driveClient, fileId, accessToken, logger } = options;
 
   const response = await driveClient.files.export(fileId, "text/plain", { accessToken });
-  await ensureExportOk(response, fileId);
+  await ensureExportOk(response, fileId, "Google Doc");
 
   const text = await response.text();
 
   if (text.length === 0) {
     logger?.error("google doc export returned empty text", { fileId });
     throw new Error(`Google Doc ${fileId} returned empty text`);
+  }
+
+  return text;
+};
+
+/**
+ * Google スプレッドシートを text/csv で取得し、UTF-8 文字列として返す。
+ */
+export const fetchSheetText = async (options: FetchSheetTextOptions): Promise<string> => {
+  const { driveClient, fileId, accessToken, logger } = options;
+
+  const response = await driveClient.files.export(fileId, "text/csv", { accessToken });
+  await ensureExportOk(response, fileId, "sheet");
+
+  const text = await response.text();
+
+  if (text.length === 0) {
+    logger?.error("sheet export returned empty text", { fileId });
+    throw new Error(`sheet ${fileId} returned empty text`);
   }
 
   return text;
@@ -147,6 +177,7 @@ export type {
   FetchPdfTextOptions,
   FetchDocxTextOptions,
   FetchPlainLikeTextOptions,
+  FetchSheetTextOptions,
 };
 
 type MimeHandler = (params: {
@@ -159,6 +190,8 @@ type MimeHandler = (params: {
 const MIME_HANDLERS: Record<string, MimeHandler> = {
   "application/vnd.google-apps.document": ({ driveClient, fileId, accessToken, logger }) =>
     fetchGoogleDocText({ driveClient, fileId, accessToken, logger }),
+  "application/vnd.google-apps.spreadsheet": ({ driveClient, fileId, accessToken, logger }) =>
+    fetchSheetText({ driveClient, fileId, accessToken, logger }),
   "application/vnd.openxmlformats-officedocument.wordprocessingml.document": ({
     driveClient,
     fileId,
@@ -184,7 +217,7 @@ export type ExtractTextOrSkipOptions = {
 
 /**
  * テキスト抽出可能な MIME のみを処理し、それ以外はスキップとしてログに記録する。
- * サポート対象: Google ドキュメント, docx, PDF, plain/markdown/csv
+ * サポート対象: Google ドキュメント, Sheets, docx, PDF, plain/markdown/csv
  */
 export const extractTextOrSkip = async (
   options: ExtractTextOrSkipOptions,

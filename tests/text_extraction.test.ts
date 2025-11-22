@@ -8,6 +8,7 @@ import {
   fetchDocxText,
   fetchGoogleDocText,
   fetchPlainLikeText,
+  fetchSheetText,
 } from "../src/text_extraction.js";
 
 const mammothExtractMock = vi.hoisted(() => vi.fn());
@@ -131,6 +132,44 @@ describe("fetchGoogleDocText", () => {
     expect(logger.debug).toHaveBeenCalledWith(
       "http retry",
       expect.objectContaining({ attempt: 1, status: 429, delayMs: 1000 }),
+    );
+  });
+});
+
+describe("fetchSheetText", () => {
+  it("files.export を text/csv で呼び出し CSV 文字列を返す", async () => {
+    const exportMock = vi.fn() as Mock<GoogleDriveClient["files"]["export"]>;
+    exportMock.mockResolvedValue(
+      new Response("a,b\n1,2", {
+        status: 200,
+        headers: { "Content-Type": "text/csv; charset=utf-8" },
+      }),
+    );
+
+    const driveClient = createDriveClient(exportMock);
+
+    const text = await fetchSheetText({ driveClient, fileId: "sheet-123" });
+
+    expect(text).toBe("a,b\n1,2");
+    expect(exportMock).toHaveBeenCalledTimes(1);
+    expect(exportMock).toHaveBeenCalledWith("sheet-123", "text/csv", {
+      accessToken: undefined,
+    });
+  });
+
+  it("空文字列が返された場合はエラーになる", async () => {
+    const exportMock = vi.fn() as Mock<GoogleDriveClient["files"]["export"]>;
+    exportMock.mockResolvedValue(
+      new Response("", {
+        status: 200,
+        headers: { "Content-Type": "text/csv; charset=utf-8" },
+      }),
+    );
+
+    const driveClient = createDriveClient(exportMock);
+
+    await expect(fetchSheetText({ driveClient, fileId: "sheet-empty" })).rejects.toThrow(
+      "sheet sheet-empty returned empty text",
     );
   });
 });
@@ -383,6 +422,44 @@ describe("extractTextOrSkip", () => {
 
     expect(text).toBe("# heading");
     expect(getMock).toHaveBeenCalledTimes(1);
+    expect(logger.info).not.toHaveBeenCalled();
+  });
+
+  it("spreadsheet MIME を抽出して文字列を返す", async () => {
+    const exportMock = vi.fn() as Mock<GoogleDriveClient["files"]["export"]>;
+    exportMock.mockResolvedValue(
+      new Response("c1,c2\n1,2", {
+        status: 200,
+        headers: { "Content-Type": "text/csv; charset=utf-8" },
+      }),
+    );
+
+    const getMock = vi.fn() as Mock<GoogleDriveClient["files"]["get"]>;
+
+    const logger = {
+      debug: vi.fn(),
+      info: vi.fn(),
+      error: vi.fn(),
+    };
+
+    const driveClient = createDriveClient(exportMock, getMock);
+
+    const text = await extractTextOrSkip({
+      driveClient,
+      fileMeta: {
+        id: "sheet-456",
+        mimeType: "application/vnd.google-apps.spreadsheet",
+        name: "data-sheet",
+      },
+      logger,
+    });
+
+    expect(text).toBe("c1,c2\n1,2");
+    expect(exportMock).toHaveBeenCalledTimes(1);
+    expect(exportMock).toHaveBeenCalledWith("sheet-456", "text/csv", {
+      accessToken: undefined,
+    });
+    expect(getMock).not.toHaveBeenCalled();
     expect(logger.info).not.toHaveBeenCalled();
   });
 });
