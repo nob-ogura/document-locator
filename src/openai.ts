@@ -43,7 +43,10 @@ export const KEYWORDS_MIN_LENGTH = 1;
 export const KEYWORDS_MAX_LENGTH = 5;
 export const KEYWORDS_SYSTEM_PROMPT =
   `Extract ${KEYWORDS_MIN_LENGTH} to ${KEYWORDS_MAX_LENGTH} short keywords ` +
-  "that best describe the user's text. Respond ONLY with a JSON array of strings.";
+  "that best describe the user's text. " +
+  "Return ONLY nouns that appear in the user query; use the exact surface form from the query. " +
+  "Exclude verbs, adjectives, adverbs, particles, helper-verb phrases, and intent words. " +
+  "Respond ONLY with a JSON array of strings.";
 export const KEYWORDS_PROMPT_REGEX = new RegExp(
   `Extract\\s+${KEYWORDS_MIN_LENGTH}\\s+to\\s+${KEYWORDS_MAX_LENGTH}\\s+short\\s+keywords`,
   "i",
