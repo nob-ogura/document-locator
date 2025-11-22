@@ -58,6 +58,9 @@ export const SIMILARITY_HIGH = 0.82;
 export const SIMILARITY_MEDIUM = 0.75;
 export const SIMILARITY_LOW = 0.6;
 const SIMILARITY_FLOOR = 0.5;
+const MIN_DYNAMIC_FLOOR = 0.35;
+const THRESHOLD_STEP = 0.1;
+const THRESHOLD_EPSILON = 0.001;
 
 const normalizeKeywords = (values: string[]): string[] =>
   Array.from(new Set(values.map((value) => value.trim()).filter((value) => value.length > 0)));
@@ -327,14 +330,32 @@ export const runSearchWithRanking = async (options: {
         canRelaxSimilarity && topSimilarity > 0 && topSimilarity < currentSimilarityThreshold;
 
       if (shouldRelaxSimilarity) {
-        const nextThreshold = Math.max(SIMILARITY_FLOOR, currentSimilarityThreshold - 0.1);
-        currentSimilarityThreshold = nextThreshold;
-        keywordOverride = keywords;
-        continue;
+        const nextThreshold = Math.max(
+          SIMILARITY_FLOOR,
+          currentSimilarityThreshold - THRESHOLD_STEP,
+        );
+        if (currentSimilarityThreshold - nextThreshold > THRESHOLD_EPSILON) {
+          currentSimilarityThreshold = nextThreshold;
+          keywordOverride = keywords;
+          continue;
+        }
+      }
+
+      const canUseTopSimilarity = topSimilarity > MIN_DYNAMIC_FLOOR;
+      const shouldUseTopSimilarity =
+        canUseTopSimilarity && topSimilarity + THRESHOLD_EPSILON < currentSimilarityThreshold;
+
+      if (shouldUseTopSimilarity) {
+        const nextThreshold = Math.max(MIN_DYNAMIC_FLOOR, topSimilarity - THRESHOLD_EPSILON);
+        if (currentSimilarityThreshold - nextThreshold > THRESHOLD_EPSILON) {
+          currentSimilarityThreshold = nextThreshold;
+          keywordOverride = keywords;
+          continue;
+        }
       }
 
       if (currentSimilarityThreshold <= SIMILARITY_LOW && keywords.length <= 1) {
-        finalResults = [];
+        finalResults = canUseTopSimilarity ? round.all.slice(0, DISPLAY_RESULT_LIMIT) : [];
         break;
       }
 
