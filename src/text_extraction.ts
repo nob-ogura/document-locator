@@ -23,6 +23,13 @@ type FetchDocxTextOptions = {
   logger?: Logger;
 };
 
+type FetchPlainLikeTextOptions = {
+  driveClient: GoogleDriveClient;
+  fileId: string;
+  accessToken?: string;
+  logger?: Logger;
+};
+
 const ensureExportOk = async (response: Response, fileId: string): Promise<void> => {
   if (response.ok) return;
 
@@ -116,7 +123,31 @@ export const fetchDocxText = async (options: FetchDocxTextOptions): Promise<stri
   return text;
 };
 
-export type { FetchGoogleDocTextOptions, FetchPdfTextOptions, FetchDocxTextOptions };
+/**
+ * text/plain / text/markdown / text/csv を Drive から取得し、UTF-8 文字列として返す。
+ */
+export const fetchPlainLikeText = async (options: FetchPlainLikeTextOptions): Promise<string> => {
+  const { driveClient, fileId, accessToken, logger } = options;
+
+  const response = await driveClient.files.get(fileId, { accessToken, alt: "media" });
+  await ensureGetOk(response, fileId, "text file");
+
+  const text = await response.text();
+
+  if (text.length === 0) {
+    logger?.error("plain-like text fetch returned empty text", { fileId });
+    throw new Error(`text file ${fileId} returned empty text`);
+  }
+
+  return text;
+};
+
+export type {
+  FetchGoogleDocTextOptions,
+  FetchPdfTextOptions,
+  FetchDocxTextOptions,
+  FetchPlainLikeTextOptions,
+};
 
 type MimeHandler = (params: {
   driveClient: GoogleDriveClient;
@@ -136,6 +167,12 @@ const MIME_HANDLERS: Record<string, MimeHandler> = {
   }) => fetchDocxText({ driveClient, fileId, accessToken, logger }),
   "application/pdf": ({ driveClient, fileId, accessToken, logger }) =>
     fetchPdfText({ driveClient, fileId, accessToken, logger }),
+  "text/plain": ({ driveClient, fileId, accessToken, logger }) =>
+    fetchPlainLikeText({ driveClient, fileId, accessToken, logger }),
+  "text/markdown": ({ driveClient, fileId, accessToken, logger }) =>
+    fetchPlainLikeText({ driveClient, fileId, accessToken, logger }),
+  "text/csv": ({ driveClient, fileId, accessToken, logger }) =>
+    fetchPlainLikeText({ driveClient, fileId, accessToken, logger }),
 };
 
 export type ExtractTextOrSkipOptions = {
@@ -147,7 +184,7 @@ export type ExtractTextOrSkipOptions = {
 
 /**
  * テキスト抽出可能な MIME のみを処理し、それ以外はスキップとしてログに記録する。
- * サポート対象: Google ドキュメント, docx, PDF
+ * サポート対象: Google ドキュメント, docx, PDF, plain/markdown/csv
  */
 export const extractTextOrSkip = async (
   options: ExtractTextOrSkipOptions,

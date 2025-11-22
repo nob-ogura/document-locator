@@ -3,7 +3,12 @@ import { afterEach, beforeEach, describe, expect, it, type Mock, vi } from "vite
 import type { GoogleDriveClient } from "../src/clients.js";
 import { createGoogleDriveClient } from "../src/clients.js";
 import type { AppConfig } from "../src/env.js";
-import { extractTextOrSkip, fetchDocxText, fetchGoogleDocText } from "../src/text_extraction.js";
+import {
+  extractTextOrSkip,
+  fetchDocxText,
+  fetchGoogleDocText,
+  fetchPlainLikeText,
+} from "../src/text_extraction.js";
 
 const mammothExtractMock = vi.hoisted(() => vi.fn());
 
@@ -218,6 +223,47 @@ describe("fetchDocxText", () => {
   });
 });
 
+describe("fetchPlainLikeText", () => {
+  it.each([
+    { mimeType: "text/plain", body: "Just plain text", fileId: "plain-1" },
+    { mimeType: "text/markdown", body: "# Title\n\ncontent", fileId: "md-1" },
+    { mimeType: "text/csv", body: "a,b\nc,d", fileId: "csv-1" },
+  ])("files.get alt=media で %s を文字列として返す", async ({ mimeType, body, fileId }) => {
+    const exportMock = vi.fn() as Mock<GoogleDriveClient["files"]["export"]>;
+    const getMock = vi.fn() as Mock<GoogleDriveClient["files"]["get"]>;
+    getMock.mockResolvedValue(
+      new Response(body, {
+        status: 200,
+        headers: { "Content-Type": `${mimeType}; charset=utf-8` },
+      }),
+    );
+
+    const driveClient = createDriveClient(exportMock, getMock);
+
+    const text = await fetchPlainLikeText({ driveClient, fileId });
+
+    expect(text).toBe(body);
+    expect(getMock).toHaveBeenCalledWith(fileId, { accessToken: undefined, alt: "media" });
+  });
+
+  it("空文字列が返された場合はエラーになる", async () => {
+    const exportMock = vi.fn() as Mock<GoogleDriveClient["files"]["export"]>;
+    const getMock = vi.fn() as Mock<GoogleDriveClient["files"]["get"]>;
+    getMock.mockResolvedValue(
+      new Response("", {
+        status: 200,
+        headers: { "Content-Type": "text/plain; charset=utf-8" },
+      }),
+    );
+
+    const driveClient = createDriveClient(exportMock, getMock);
+
+    await expect(fetchPlainLikeText({ driveClient, fileId: "plain-empty" })).rejects.toThrow(
+      "text file plain-empty returned empty text",
+    );
+  });
+});
+
 describe("extractTextOrSkip", () => {
   it("非対応 MIME をスキップし、抽出処理を呼ばずにログを残す", async () => {
     const exportMock = vi.fn() as Mock<GoogleDriveClient["files"]["export"]>;
@@ -304,6 +350,39 @@ describe("extractTextOrSkip", () => {
     expect(text).toBe("DOCX FROM SKIP HANDLER");
     expect(getMock).toHaveBeenCalledTimes(1);
     expect(mammothExtractMock).toHaveBeenCalledTimes(1);
+    expect(logger.info).not.toHaveBeenCalled();
+  });
+
+  it("text/markdown MIME を抽出して文字列を返す", async () => {
+    const exportMock = vi.fn() as Mock<GoogleDriveClient["files"]["export"]>;
+    const getMock = vi.fn() as Mock<GoogleDriveClient["files"]["get"]>;
+    getMock.mockResolvedValue(
+      new Response("# heading", {
+        status: 200,
+        headers: { "Content-Type": "text/markdown; charset=utf-8" },
+      }),
+    );
+
+    const logger = {
+      debug: vi.fn(),
+      info: vi.fn(),
+      error: vi.fn(),
+    };
+
+    const driveClient = createDriveClient(exportMock, getMock);
+
+    const text = await extractTextOrSkip({
+      driveClient,
+      fileMeta: {
+        id: "md-123",
+        mimeType: "text/markdown",
+        name: "README.md",
+      },
+      logger,
+    });
+
+    expect(text).toBe("# heading");
+    expect(getMock).toHaveBeenCalledTimes(1);
     expect(logger.info).not.toHaveBeenCalled();
   });
 });
