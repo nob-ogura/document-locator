@@ -32,6 +32,7 @@ const DEFAULT_FIELDS = "files(id,name,mimeType,modifiedTime),nextPageToken";
 const DEFAULT_ORDER = "modifiedTime asc";
 const DEFAULT_MAX_RETRIES = 5;
 const DEFAULT_BASE_DELAY_MS = 1000;
+const FOLDER_MIME_TYPE = "application/vnd.google-apps.folder";
 
 const sleep = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms));
 
@@ -127,11 +128,13 @@ const buildListParams = (
   pageSize: number,
   pageToken: string | undefined,
   fields: string,
+  parents?: string[],
 ): GoogleDriveFilesListParams => ({
   q,
   pageSize,
   pageToken,
   fields,
+  parents,
   orderBy: DEFAULT_ORDER,
   includeItemsFromAllDrives: true,
   supportsAllDrives: true,
@@ -172,22 +175,40 @@ export const listDriveFilesPaged = async (
   const modifiedFilter = buildModifiedTimeFilter(effectiveMode, syncState);
 
   const aggregated: DriveFileEntry[] = [];
-  let pageToken: string | undefined;
+  const folderQueue = [...driveClient.targetFolderIds];
+  const visitedFolders = new Set(folderQueue);
 
-  do {
-    const params = buildListParams(modifiedFilter, pageSize, pageToken, fields);
-    const response = await listWithBackoff(driveClient, params, effectiveLogger);
+  while (folderQueue.length > 0) {
+    const currentFolderId = folderQueue.shift();
+    if (!currentFolderId) continue;
 
-    await ensureOk(response);
-    const parsed = await parseListResponse(response);
+    let pageToken: string | undefined;
 
-    if (parsed.files && parsed.files.length > 0) {
-      const filtered = filterBySyncState(parsed.files, effectiveMode, syncState);
-      aggregated.push(...filtered);
-    }
+    do {
+      const params = buildListParams(modifiedFilter, pageSize, pageToken, fields, [
+        currentFolderId,
+      ]);
+      const response = await listWithBackoff(driveClient, params, effectiveLogger);
 
-    pageToken = parsed.nextPageToken ?? undefined;
-  } while (pageToken);
+      await ensureOk(response);
+      const parsed = await parseListResponse(response);
+      const files = parsed.files ?? [];
+
+      for (const file of files) {
+        if (file.mimeType === FOLDER_MIME_TYPE && file.id && !visitedFolders.has(file.id)) {
+          visitedFolders.add(file.id);
+          folderQueue.push(file.id);
+        }
+      }
+
+      const filtered = filterBySyncState(files, effectiveMode, syncState);
+      if (filtered.length > 0) {
+        aggregated.push(...filtered);
+      }
+
+      pageToken = parsed.nextPageToken ?? undefined;
+    } while (pageToken);
+  }
 
   return aggregated;
 };

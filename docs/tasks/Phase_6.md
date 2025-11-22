@@ -142,3 +142,20 @@ Scenario: 実鍵スモーク（限定スコープ）
   And drive_sync_state が最新の modifiedTime で更新される
   And API 呼び出し回数とトークン使用量が DEBUG ログに出力される
 ```
+
+### T11: 再帰列挙済みファイルを前提とした処理
+```
+Scenario: 再帰列挙した最下層のファイルを処理する
+  Given ターゲットフォルダ配下に A/B/C の階層があり C に text/plain ファイル "deep.txt" がある
+  And crawler を "pnpm crawler --mode full --limit 10" で実行する
+  Then listDriveFilesPaged がサブフォルダを FIFO キューで再帰列挙し "deep.txt" を対象リストに含める
+  And "deep.txt" に対してテキスト抽出→AI パイプライン→Supabase upsert が順に呼ばれる
+  And 非対応 MIME は従来どおりスキップログに記録される
+
+Scenario: 再帰列挙後のテキスト対象に limit を適用する
+  Given drive_sync_state.drive_modified_at が "2024-10-01T00:00:00Z" である
+  And サブフォルダ配下にテキスト対応ファイルが 3 件存在する
+  When "pnpm crawler --mode diff --limit 1" を実行する
+  Then files.list のクエリに "modifiedTime > '2024-10-01T00:00:00Z'" が含まれる
+  And FIFO 再帰列挙で得られたテキスト対象のうち先頭 1 件のみが抽出・AI・upsert まで処理される
+```

@@ -100,3 +100,21 @@ Scenario: Google スプレッドシートを CSV にエクスポートして取�
   When fetchSheetText(fileId) が files.export(fileId, "text/csv") を呼び出す
   Then CSV 文字列が返り、空ならエラーとして扱われる
 ```
+
+### T9: サブフォルダ再帰列挙
+```
+Scenario: フルクロールでサブフォルダを FIFO でたどる
+  Given ターゲットフォルダ配下に A/B/C の階層が存在し最下層に text/plain ファイルがある
+  When listDriveFilesPaged({ mode: "full" }) を実行する
+  Then files.list のクエリが pageSize=100 で呼ばれ A, B, C の順にサブフォルダを取得する
+  And レスポンスで見つかったサブフォルダを FIFO キューに追加しキューが空になるまで繰り返す
+  And 最下層の text/plain ファイルが列挙結果に含まれる
+  And 非対応 MIME は "skip: unsupported mime_type" としてログ出力される
+
+Scenario: 差分クロールでもサブフォルダを再帰列挙する
+  Given drive_sync_state.drive_modified_at が "2024-09-01T00:00:00Z" で保存されている
+  And ターゲットフォルダ配下にサブフォルダが存在する
+  When listDriveFilesPaged({ mode: "diff" }) を実行する
+  Then files.list のクエリに "modifiedTime > '2024-09-01T00:00:00Z'" が含まれる
+  And サブフォルダを FIFO キューで全てたどり text 対応ファイルを列挙する
+```

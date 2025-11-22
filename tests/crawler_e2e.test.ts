@@ -1,9 +1,10 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-
 import { syncSupabaseIndex } from "../src/crawler.ts";
+import type { DriveFileEntry } from "../src/drive.ts";
 import { baseConfig } from "./fixtures/config.ts";
 import {
   createDriveMock,
+  createHierarchicalDriveMock,
   driveFilesDiff,
   driveFilesFull,
   driveFilesWithPdf,
@@ -100,5 +101,127 @@ describe("crawler mock e2e", () => {
     expect(result.upsertedCount).toBe(1);
     expect(result.latestDriveModifiedAt).toBe("2024-10-11T00:00:00Z");
     expect(getSyncState()).toBe("2024-10-11T00:00:00Z");
+  });
+
+  it("再帰列挙した最下層のテキストを処理して AI / upsert まで実行する", async () => {
+    const folderMime = "application/vnd.google-apps.folder";
+    const tree = {
+      "root-folder": [{ id: "folder-A", name: "A", mimeType: folderMime }],
+      "folder-A": [{ id: "folder-B", name: "B", mimeType: folderMime }],
+      "folder-B": [{ id: "folder-C", name: "C", mimeType: folderMime }],
+      "folder-C": [
+        {
+          id: "deep-text",
+          name: "deep.txt",
+          mimeType: "text/plain",
+          modifiedTime: "2024-10-20T00:00:00Z",
+        },
+        {
+          id: "deep-image",
+          name: "deep.png",
+          mimeType: "image/png",
+          modifiedTime: "2024-10-21T00:00:00Z",
+        },
+      ],
+    } satisfies Record<string, DriveFileEntry[]>;
+
+    const { drive, list, get, logger } = createHierarchicalDriveMock(tree, {
+      rootIds: ["root-folder"],
+    });
+    const { supabase, upserts, getSyncState } = createSupabaseIndexMock();
+    const { openai, chatCreate, embeddingsCreate } = createOpenAIMock();
+
+    const result = await syncSupabaseIndex({
+      config: { ...baseConfig, googleDriveTargetFolderIds: ["root-folder"] },
+      mode: "full",
+      limit: 10,
+      deps: { googleDrive: drive, supabase, openai, logger },
+    });
+
+    expect(list.mock.calls.map((call) => call?.[0]?.parents)).toEqual([
+      ["root-folder"],
+      ["folder-A"],
+      ["folder-B"],
+      ["folder-C"],
+    ]);
+
+    expect(result.processed.map((f) => f.id)).toEqual(["deep-text"]);
+    expect(result.skipped.map((f) => f.id)).toEqual(expect.arrayContaining(["deep-image"]));
+
+    expect(get).toHaveBeenCalledWith("deep-text", expect.objectContaining({ alt: "media" }));
+    expect(chatCreate).toHaveBeenCalledTimes(2);
+    expect(embeddingsCreate).toHaveBeenCalledTimes(1);
+
+    expect(upserts.map((row) => row.file_id)).toEqual(["deep-text"]);
+    expect(result.upsertedCount).toBe(1);
+    expect(result.latestDriveModifiedAt).toBe("2024-10-20T00:00:00Z");
+    expect(getSyncState()).toBe("2024-10-20T00:00:00Z");
+  });
+
+  it("再帰列挙後のテキスト対象に limit を適用する", async () => {
+    const folderMime = "application/vnd.google-apps.folder";
+    const tree = {
+      "root-target": [{ id: "folder-A", name: "A", mimeType: folderMime }],
+      "folder-A": [
+        {
+          id: "text-1",
+          name: "first.txt",
+          mimeType: "text/plain",
+          modifiedTime: "2024-10-02T00:00:00Z",
+        },
+        { id: "folder-B", name: "B", mimeType: folderMime },
+      ],
+      "folder-B": [
+        {
+          id: "text-2",
+          name: "second.txt",
+          mimeType: "text/plain",
+          modifiedTime: "2024-10-03T00:00:00Z",
+        },
+        { id: "folder-C", name: "C", mimeType: folderMime },
+      ],
+      "folder-C": [
+        {
+          id: "text-3",
+          name: "third.txt",
+          mimeType: "text/plain",
+          modifiedTime: "2024-10-04T00:00:00Z",
+        },
+      ],
+    } satisfies Record<string, DriveFileEntry[]>;
+
+    const { drive, list, logger } = createHierarchicalDriveMock(tree, {
+      rootIds: ["root-target"],
+    });
+    const { supabase, upserts, getSyncState } = createSupabaseIndexMock("2024-10-01T00:00:00Z");
+    const { openai, chatCreate, embeddingsCreate } = createOpenAIMock();
+
+    const result = await syncSupabaseIndex({
+      config: { ...baseConfig, googleDriveTargetFolderIds: ["root-target"] },
+      mode: "diff",
+      limit: 1,
+      deps: { googleDrive: drive, supabase, openai, logger },
+    });
+
+    expect(list.mock.calls.map((call) => call?.[0]?.parents)).toEqual([
+      ["root-target"],
+      ["folder-A"],
+      ["folder-B"],
+      ["folder-C"],
+    ]);
+
+    const firstParams = list.mock.calls[0]?.[0];
+    expect(firstParams?.q).toBe("modifiedTime > '2024-10-01T00:00:00Z'");
+
+    expect(result.processable.map((f) => f.id)).toEqual(["text-1"]);
+    expect(result.processed.map((f) => f.id)).toEqual(["text-1"]);
+
+    expect(chatCreate).toHaveBeenCalledTimes(2);
+    expect(embeddingsCreate).toHaveBeenCalledTimes(1);
+
+    expect(upserts.map((row) => row.file_id)).toEqual(["text-1"]);
+    expect(result.upsertedCount).toBe(1);
+    expect(result.latestDriveModifiedAt).toBe("2024-10-02T00:00:00Z");
+    expect(getSyncState()).toBe("2024-10-02T00:00:00Z");
   });
 });

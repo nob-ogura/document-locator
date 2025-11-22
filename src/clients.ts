@@ -66,6 +66,7 @@ export type GoogleDriveRequestInit = BaseRequestInit & { accessToken?: string };
 
 export type GoogleDriveFilesListParams = {
   accessToken?: string;
+  parents?: string[];
   q?: string;
   fields?: string;
   pageSize?: number;
@@ -189,11 +190,14 @@ export const createGoogleDriveClient = (
     });
   };
 
-  const buildFolderScope = (): string =>
-    config.googleDriveTargetFolderIds.map((id) => `'${id}' in parents`).join(" or ");
+  const buildFolderScope = (parentIds?: string[]): string => {
+    const ids = parentIds && parentIds.length > 0 ? parentIds : config.googleDriveTargetFolderIds;
+    return ids.map((id) => `'${id}' in parents`).join(" or ");
+  };
 
-  const toScopedQuery = (userQuery?: string): string => {
-    const folderScope = buildFolderScope();
+  const toScopedQuery = (userQuery: string | undefined, parentIds?: string[]): string => {
+    const folderScope = buildFolderScope(parentIds);
+    if (!folderScope) return userQuery ?? "";
     if (!userQuery || userQuery.trim() === "") {
       return `(${folderScope})`;
     }
@@ -201,20 +205,21 @@ export const createGoogleDriveClient = (
   };
 
   const buildFilesListUrl = (params: Omit<GoogleDriveFilesListParams, "accessToken"> = {}) => {
+    const { parents, ...rest } = params;
     const searchParams = new URLSearchParams();
-    searchParams.set("q", toScopedQuery(params.q));
+    searchParams.set("q", toScopedQuery(rest.q, parents));
 
-    if (params.fields) searchParams.set("fields", params.fields);
-    if (params.pageSize !== undefined) searchParams.set("pageSize", String(params.pageSize));
-    if (params.pageToken) searchParams.set("pageToken", params.pageToken);
-    if (params.orderBy) searchParams.set("orderBy", params.orderBy);
-    if (params.spaces) searchParams.set("spaces", params.spaces);
-    if (params.corpora) searchParams.set("corpora", params.corpora);
-    if (params.includeItemsFromAllDrives !== undefined) {
-      searchParams.set("includeItemsFromAllDrives", String(params.includeItemsFromAllDrives));
+    if (rest.fields) searchParams.set("fields", rest.fields);
+    if (rest.pageSize !== undefined) searchParams.set("pageSize", String(rest.pageSize));
+    if (rest.pageToken) searchParams.set("pageToken", rest.pageToken);
+    if (rest.orderBy) searchParams.set("orderBy", rest.orderBy);
+    if (rest.spaces) searchParams.set("spaces", rest.spaces);
+    if (rest.corpora) searchParams.set("corpora", rest.corpora);
+    if (rest.includeItemsFromAllDrives !== undefined) {
+      searchParams.set("includeItemsFromAllDrives", String(rest.includeItemsFromAllDrives));
     }
-    if (params.supportsAllDrives !== undefined) {
-      searchParams.set("supportsAllDrives", String(params.supportsAllDrives));
+    if (rest.supportsAllDrives !== undefined) {
+      searchParams.set("supportsAllDrives", String(rest.supportsAllDrives));
     }
 
     return `/drive/v3/files?${searchParams.toString()}`;

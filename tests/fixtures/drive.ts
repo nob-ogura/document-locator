@@ -153,3 +153,90 @@ export const createDriveMock = (
 
   return { drive, list, exportFile, get, logger };
 };
+
+export type DriveTree = Record<string, DriveFileEntry[]>;
+
+export const createHierarchicalDriveMock = (
+  tree: DriveTree,
+  options: { rootIds?: string[] } = {},
+): {
+  drive: GoogleDriveClient;
+  list: ReturnType<typeof vi.fn<GoogleDriveClient["files"]["list"]>>;
+  exportFile: ReturnType<typeof vi.fn<GoogleDriveClient["files"]["export"]>>;
+  get: ReturnType<typeof vi.fn<GoogleDriveClient["files"]["get"]>>;
+  logger: ReturnType<typeof createTestLogger>;
+} => {
+  const logger = createTestLogger();
+  const rootIds = options.rootIds ?? ["root"];
+
+  const fileMap = new Map<string, DriveFileEntry>();
+  Object.values(tree).forEach((entries) => {
+    entries.forEach((entry) => {
+      if (entry.id) {
+        fileMap.set(entry.id, entry);
+      }
+    });
+  });
+
+  const list = vi
+    .fn<GoogleDriveClient["files"]["list"]>()
+    .mockImplementation(async (params?: GoogleDriveFilesListParams) => {
+      const parentId = params?.parents?.[0] ?? rootIds[0];
+      const entries = tree[parentId] ?? [];
+      const cutoff = parseModifiedAfter(params?.q);
+
+      const filtered =
+        cutoff === null
+          ? entries
+          : entries.filter((entry) => {
+              if (!entry.modifiedTime) return true;
+              return isAfter(entry.modifiedTime, cutoff);
+            });
+
+      return new Response(JSON.stringify({ files: filtered }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      });
+    });
+
+  const exportFile = vi
+    .fn<GoogleDriveClient["files"]["export"]>()
+    .mockImplementation(async (fileId: string) => {
+      const text = fileMap.get(fileId)?.name ?? "mock-text";
+      return new Response(text, {
+        status: 200,
+        headers: { "Content-Type": "text/plain" },
+      });
+    });
+
+  const get = vi.fn<GoogleDriveClient["files"]["get"]>().mockImplementation(async (fileId) => {
+    const file = fileMap.get(fileId);
+    const body = file?.name ?? "mock-body";
+    const mime = file?.mimeType ?? "application/octet-stream";
+
+    return new Response(body, {
+      status: 200,
+      headers: { "Content-Type": mime },
+    });
+  });
+
+  const drive: GoogleDriveClient = {
+    logger,
+    targetFolderIds: rootIds,
+    credentials: {
+      clientId: "client-id",
+      clientSecret: "client-secret",
+      refreshToken: "refresh-token",
+    },
+    request: vi.fn(),
+    auth: { fetchAccessToken: vi.fn().mockResolvedValue("token") },
+    folders: { ensureTargetsExist: vi.fn().mockResolvedValue(undefined) },
+    files: {
+      list,
+      export: exportFile,
+      get,
+    },
+  };
+
+  return { drive, list, exportFile, get, logger };
+};

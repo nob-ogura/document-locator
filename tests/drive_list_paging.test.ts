@@ -11,14 +11,17 @@ const createListResponse = (files: unknown[], nextPageToken?: string): Response 
     headers: { "Content-Type": "application/json" },
   });
 
-const createDriveClient = (listMock: Mock<GoogleDriveClient["files"]["list"]>): GoogleDriveClient =>
+const createDriveClient = (
+  listMock: Mock<GoogleDriveClient["files"]["list"]>,
+  targetFolderIds: string[] = ["folderA"],
+): GoogleDriveClient =>
   ({
     logger: {
       debug: vi.fn(),
       info: vi.fn(),
       error: vi.fn(),
     },
-    targetFolderIds: ["folderA"],
+    targetFolderIds,
     credentials: {
       clientId: "client-id",
       clientSecret: "client-secret",
@@ -127,6 +130,93 @@ describe("listDriveFilesPaged", () => {
     });
 
     expect(files.map((f) => f.id)).toEqual(["after"]);
+  });
+
+  it("mode=full でサブフォルダを FIFO でたどり深い階層のファイルを取得する", async () => {
+    const listMock = vi
+      .fn<GoogleDriveClient["files"]["list"]>()
+      .mockResolvedValueOnce(
+        createListResponse([{ id: "folder-A", mimeType: "application/vnd.google-apps.folder" }]),
+      )
+      .mockResolvedValueOnce(
+        createListResponse([{ id: "folder-B", mimeType: "application/vnd.google-apps.folder" }]),
+      )
+      .mockResolvedValueOnce(
+        createListResponse([{ id: "folder-C", mimeType: "application/vnd.google-apps.folder" }]),
+      )
+      .mockResolvedValueOnce(
+        createListResponse([
+          { id: "deep-file", mimeType: "text/plain", name: "deep.txt" },
+          { id: "img-1", mimeType: "image/png" },
+        ]),
+      );
+
+    vi.spyOn(syncRepo, "getDriveSyncState").mockResolvedValue(null);
+
+    const driveClient = createDriveClient(listMock, ["root-target"]);
+    const supabaseClient = createSupabaseClient();
+
+    const files = await listDriveFilesPaged({
+      driveClient,
+      supabaseClient,
+      mode: "full",
+    });
+
+    expect(listMock).toHaveBeenCalledTimes(4);
+    expect(listMock.mock.calls.map((call) => call?.[0]?.parents)).toEqual([
+      ["root-target"],
+      ["folder-A"],
+      ["folder-B"],
+      ["folder-C"],
+    ]);
+
+    expect(files.some((file) => file.id === "deep-file")).toBe(true);
+  });
+
+  it("mode=diff でもサブフォルダを FIFO で再帰列挙し modifiedTime フィルタを適用する", async () => {
+    const listMock = vi
+      .fn<GoogleDriveClient["files"]["list"]>()
+      .mockResolvedValueOnce(
+        createListResponse([
+          { id: "child-A", mimeType: "application/vnd.google-apps.folder" },
+          { id: "old-1", mimeType: "text/plain", modifiedTime: "2024-09-01T00:00:00Z" },
+        ]),
+      )
+      .mockResolvedValueOnce(
+        createListResponse([{ id: "child-B", mimeType: "application/vnd.google-apps.folder" }]),
+      )
+      .mockResolvedValueOnce(
+        createListResponse([
+          { id: "new-1", mimeType: "text/plain", modifiedTime: "2024-09-02T00:00:00Z" },
+        ]),
+      );
+
+    vi.spyOn(syncRepo, "getDriveSyncState").mockResolvedValue({
+      id: "global",
+      drive_modified_at: "2024-09-01T00:00:00Z",
+    });
+
+    const driveClient = createDriveClient(listMock, ["root-target"]);
+    const supabaseClient = createSupabaseClient();
+
+    const files = await listDriveFilesPaged({
+      driveClient,
+      supabaseClient,
+      mode: "diff",
+    });
+
+    expect(listMock).toHaveBeenCalledTimes(3);
+    expect(listMock.mock.calls.map((call) => call?.[0]?.parents)).toEqual([
+      ["root-target"],
+      ["child-A"],
+      ["child-B"],
+    ]);
+
+    const queryParam = listMock.mock.calls[0]?.[0];
+    expect(queryParam?.q).toBe("modifiedTime > '2024-09-01T00:00:00Z'");
+
+    expect(files.map((f) => f.id)).toEqual(expect.arrayContaining(["child-A", "child-B", "new-1"]));
+    expect(files.some((f) => f.id === "old-1")).toBe(false);
   });
 
   it("429 応答を指数バックオフでリトライしてページングを継続する", async () => {
