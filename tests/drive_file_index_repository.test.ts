@@ -77,7 +77,7 @@ describe("drive_file_index repository", () => {
     ]);
   });
 
-  it("vectorSearchDriveFileIndex が probes と limit を渡し、コサイン距離昇順で filterFileIds を適用する", async () => {
+  it("vectorSearchDriveFileIndex が probes と limit を渡し、ハイブリッドスコア優先で filterFileIds を適用する", async () => {
     const supabaseResponse = [
       {
         file_id: "b",
@@ -87,6 +87,7 @@ describe("drive_file_index repository", () => {
         drive_modified_at: "2024-03-03T00:00:00Z",
         mime_type: "application/pdf",
         distance: 0.05,
+        hybrid_score: 0.1,
       },
       {
         file_id: "a",
@@ -96,6 +97,7 @@ describe("drive_file_index repository", () => {
         drive_modified_at: "2024-03-03T00:00:00Z",
         mime_type: "application/pdf",
         distance: 0.1,
+        hybrid_score: 0.5,
       },
       {
         file_id: "c",
@@ -105,6 +107,7 @@ describe("drive_file_index repository", () => {
         drive_modified_at: "2024-03-03T00:00:00Z",
         mime_type: "application/pdf",
         distance: 0.2,
+        hybrid_score: 0.9,
       },
     ];
 
@@ -130,12 +133,13 @@ describe("drive_file_index repository", () => {
     const body = JSON.parse(init?.body as string);
     expect(body.match_count).toBe(2);
     expect(body.probes).toBe(10);
+    expect(body.query_text).toBeNull();
     expect(body.filter_file_ids).toEqual(["a", "c"]);
     expect(body.filter_after).toBeNull();
     expect(body.filter_before).toBeNull();
     expect(body.filter_mime).toBeNull();
 
-    expect(results.map((row) => row.file_id)).toEqual(["a", "c"]);
+    expect(results.map((row) => row.file_id)).toEqual(["c", "a"]);
     expect(results.every((row) => ["a", "c"].includes(row.file_id))).toBe(true);
   });
 });

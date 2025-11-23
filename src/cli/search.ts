@@ -8,7 +8,12 @@ import type { DriveFileIndexRow } from "../drive_file_index_repository.ts";
 import { loadEnv } from "../env.ts";
 import { createLogger, type Logger } from "../logger.ts";
 import { createMockOpenAIClient } from "../openai-provider.ts";
-import { runSearchWithRanking, type SearchFilters, type SearchRequest } from "../search.ts";
+import {
+  runSearchWithRanking,
+  type SearchFilters,
+  type SearchRequest,
+  SIMILARITY_HIGH,
+} from "../search.ts";
 
 const ISO_DATE_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
 
@@ -155,7 +160,11 @@ program
   .option("--after <date>", "filter results modified after date (YYYY-MM-DD)", parseIsoDate)
   .option("--before <date>", "filter results modified before date (YYYY-MM-DD)", parseIsoDate)
   .option("--mime <type>", "filter by MIME type", parseMime)
-  .option("--similarity <float>", "initial similarity threshold (default: 0.70)", parseSimilarity)
+  .option(
+    "--similarity <float>",
+    `initial similarity threshold (default: ${SIMILARITY_HIGH.toFixed(2)})`,
+    parseSimilarity,
+  )
   .option("--limit <n>", "maximum candidates to fetch (default: 80)", parseLimit)
   .option("--json", "output parsed payload as JSON (debug)")
   .action(async (queryParts: string[], options: SearchCliOptions) => {
@@ -174,7 +183,7 @@ program
         mime: options.mime,
       };
 
-      const similarityThreshold = options.similarity ?? 0.7;
+      const similarityThreshold = options.similarity ?? SIMILARITY_HIGH;
       const limit = options.limit ?? 80;
 
       const request: SearchRequest = {

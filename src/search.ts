@@ -54,12 +54,12 @@ export type SearchDeps = {
 const DISPLAY_RESULT_LIMIT = 10;
 const SECONDARY_RESULT_LIMIT = 20;
 
-export const SIMILARITY_HIGH = 0.82;
-export const SIMILARITY_MEDIUM = 0.75;
-export const SIMILARITY_LOW = 0.6;
-const SIMILARITY_FLOOR = 0.5;
+export const SIMILARITY_HIGH = 0.75;
+export const SIMILARITY_MEDIUM = 0.5;
+export const SIMILARITY_LOW = 0.25;
+const SIMILARITY_FLOOR = 0.25;
 const MIN_DYNAMIC_FLOOR = 0.35;
-const THRESHOLD_STEP = 0.1;
+const THRESHOLD_STEP = 0.15;
 const THRESHOLD_EPSILON = 0.001;
 
 const normalizeKeywords = (values: string[]): string[] =>
@@ -74,16 +74,23 @@ export const classifyHitCount = (hitCount: number): HitCountBucket => {
 };
 
 const resolveSimilarity = (row: DriveFileIndexRow): number => {
-  if (typeof row.similarity === "number" && Number.isFinite(row.similarity)) {
-    return row.similarity;
-  }
+  // Use raw vector similarity (or 1 - distance) for thresholding so
+  // vector-only hits are not penalized. Consider hybrid/lexical only as
+  // optional boosters.
+  const similarity = typeof row.similarity === "number" ? row.similarity : null;
+  const distance = typeof row.distance === "number" ? row.distance : null;
+  const hybrid = typeof row.hybrid_score === "number" ? row.hybrid_score : null;
+  const lexical = typeof row.lexical === "number" ? row.lexical : null;
 
-  if (typeof row.distance === "number" && Number.isFinite(row.distance)) {
-    const similarity = 1 - row.distance;
-    return Math.max(0, Math.min(1, similarity));
-  }
+  const vectorSim = similarity ?? (distance !== null ? 1 - distance : null);
 
-  return 0;
+  const best = Math.max(
+    vectorSim ?? 0,
+    hybrid ?? 0, // keep hybrid as a possible boost when present
+    lexical ?? 0,
+  );
+
+  return Math.max(0, Math.min(1, best));
 };
 
 const buildQueryEmbeddingText = (query: string, keywords: string[]): string => {
@@ -119,6 +126,24 @@ const rerankResultsWithLLM = async (options: {
   if (candidates.length <= 1) return candidates;
 
   const validIds = new Set(candidates.map((row) => row.file_id));
+  const applyLexicalBoost = (rows: DriveFileIndexRow[]): DriveFileIndexRow[] => {
+    const q = query.trim();
+    if (q.length === 0) return rows;
+
+    const scored = rows.map((row, index) => {
+      const haystack = [row.file_name ?? "", row.summary ?? "", (row.keywords ?? []).join(" ")]
+        .join(" ")
+        .toLowerCase();
+      const hit = haystack.includes(q.toLowerCase()) ? 1 : 0;
+      return { row, hit, index };
+    });
+
+    if (!scored.some((item) => item.hit > 0)) return rows;
+
+    scored.sort((a, b) => b.hit - a.hit || a.index - b.index);
+    return scored.map((item) => item.row);
+  };
+
   const candidatesText = candidates
     .map((row, index) => {
       const parts = [
@@ -152,6 +177,11 @@ const rerankResultsWithLLM = async (options: {
   });
 
   const content = response.choices?.[0]?.message?.content ?? "";
+  const stripCodeFence = (value: string): string =>
+    value
+      .replace(/^```[a-zA-Z0-9_-]*\s*/u, "")
+      .replace(/```$/u, "")
+      .trim();
 
   try {
     const parsed = JSON.parse(content);
@@ -167,7 +197,28 @@ const rerankResultsWithLLM = async (options: {
           .map((id) => candidates.find((row) => row.file_id === id))
           .filter((row): row is DriveFileIndexRow => Boolean(row));
         const remaining = candidates.filter((row) => !rankedSet.has(row.file_id));
-        return [...ranked, ...remaining].slice(0, DISPLAY_RESULT_LIMIT);
+        return applyLexicalBoost([...ranked, ...remaining]).slice(0, DISPLAY_RESULT_LIMIT);
+      }
+    }
+  } catch {
+    // fall through to sanitized parse
+  }
+
+  try {
+    const parsed = JSON.parse(stripCodeFence(content));
+    if (Array.isArray(parsed)) {
+      const rankedIds = parsed
+        .map((value) => (typeof value === "string" ? value : String(value)))
+        .map((value) => value.trim())
+        .filter((value) => value.length > 0 && validIds.has(value));
+
+      if (rankedIds.length > 0) {
+        const rankedSet = new Set(rankedIds);
+        const ranked = rankedIds
+          .map((id) => candidates.find((row) => row.file_id === id))
+          .filter((row): row is DriveFileIndexRow => Boolean(row));
+        const remaining = candidates.filter((row) => !rankedSet.has(row.file_id));
+        return applyLexicalBoost([...ranked, ...remaining]).slice(0, DISPLAY_RESULT_LIMIT);
       }
     }
   } catch {
@@ -175,7 +226,7 @@ const rerankResultsWithLLM = async (options: {
   }
 
   logger?.info("search: rerank fallback to original order", { returned: content });
-  return candidates.slice(0, DISPLAY_RESULT_LIMIT);
+  return applyLexicalBoost(candidates).slice(0, DISPLAY_RESULT_LIMIT);
 };
 
 const performVectorSearchRound = async (options: {
@@ -208,8 +259,17 @@ const performVectorSearchRound = async (options: {
   const embeddingInput = buildQueryEmbeddingText(query, keywords);
   const embedding = await generateEmbedding({ openai, input: embeddingInput });
 
+  // Use extracted keywords for the lexical (tsvector) part of hybrid search so that
+  // websearch_to_tsquery sees space-separated tokens instead of the original
+  // free-form query. This improves matches for Japanese queries without spaces
+  // (e.g., 「AIについて書かれたコラム」) where the whole string would otherwise
+  // become a single token and fail to match file_name_tsv entries that only contain
+  // the individual words.
+  const lexicalQueryText = keywords.length > 0 ? keywords.join(" ") : query;
+
   const rows = await vectorSearch(supabase, embedding, {
     limit,
+    queryText: lexicalQueryText,
     filters,
   });
 
@@ -297,7 +357,7 @@ export const runSearchWithRanking = async (options: {
 
     const lowTopSimilarity = round.filtered.length > 0 && topSimilarity < SIMILARITY_MEDIUM;
     const shouldAskUserForRefinement =
-      bucket !== "single" && (bucket === "tooMany" || lowTopSimilarity);
+      bucket !== "single" && bucket !== "few" && (bucket === "tooMany" || lowTopSimilarity);
 
     if (shouldAskUserForRefinement && iteration < request.searchMaxLoopCount) {
       const answer = options.deps?.askUser

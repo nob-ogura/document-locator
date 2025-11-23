@@ -19,6 +19,14 @@ export type DriveFileIndexRow = {
   drive_modified_at: string;
   mime_type: string;
   /**
+   * Hybrid score combining vector similarity and lexical match.
+   */
+  hybrid_score?: number;
+  /**
+   * Lexical ranking score produced by PostgreSQL text search.
+   */
+  lexical?: number;
+  /**
    * Cosine distance. Smaller is more similar.
    */
   distance?: number;
@@ -31,6 +39,7 @@ export type DriveFileIndexRow = {
 export type VectorSearchOptions = {
   limit?: number;
   probes?: number;
+  queryText?: string;
   filterFileIds?: string[];
   filters?: {
     after?: string;
@@ -65,8 +74,9 @@ const ensureOk = async (response: Response): Promise<void> => {
 };
 
 const orderingScore = (row: DriveFileIndexRow): number => {
-  if (typeof row.distance === "number") return row.distance;
+  if (typeof row.hybrid_score === "number") return -row.hybrid_score;
   if (typeof row.similarity === "number") return -row.similarity;
+  if (typeof row.distance === "number") return row.distance;
   return Number.POSITIVE_INFINITY;
 };
 
@@ -126,6 +136,7 @@ export const vectorSearchDriveFileIndex = async (
       query_embedding: queryEmbedding,
       match_count: limit,
       probes,
+      query_text: options.queryText ?? null,
       filter_file_ids:
         options.filterFileIds && options.filterFileIds.length > 0 ? options.filterFileIds : null,
       filter_after: options.filters?.after ?? null,

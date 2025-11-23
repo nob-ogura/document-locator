@@ -69,6 +69,7 @@ describe.skipIf(!runIntegration)("drive_file_index integration", () => {
     expect(byName).toMatchObject({
       file_id: { type: "text", notNull: true },
       file_name: { type: "text", notNull: true },
+      file_name_tsv: { type: "tsvector", notNull: false },
       summary: { type: "text", notNull: true },
       keywords: { type: "text[]", notNull: false },
       embedding: { type: "vector(1536)", notNull: true },
@@ -112,5 +113,10 @@ describe.skipIf(!runIntegration)("drive_file_index integration", () => {
     expect(embedding).toMatch(/USING\s+ivfflat/i);
     expect(embedding).toMatch(/embedding\s+vector_cosine_ops/i);
     expect(embedding).toMatch(/lists\s*=\s*'?100'?/i);
+
+    const fileNameTsv = indexByName.idx_drive_file_name_tsv;
+    expect(fileNameTsv).toBeDefined();
+    expect(fileNameTsv).toMatch(/USING\s+gin/i);
+    expect(fileNameTsv).toMatch(/file_name_tsv/i);
   });
 });

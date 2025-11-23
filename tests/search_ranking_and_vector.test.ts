@@ -113,4 +113,76 @@ describe("runSearchWithRanking - ranking and vector", () => {
     expect(chatCreate).toHaveBeenCalledTimes(1);
     expect(embeddingsCreate).toHaveBeenCalledTimes(1);
   });
+
+  it("prefers hybrid_score over similarity when evaluating thresholds", async () => {
+    const rows = buildIndexRows([{ id: "hyb", name: "Hybrid match" }], { summary: "hybrid" });
+    const supabaseMock = createSupabaseSearchMock({
+      rows,
+      vectorResults: [
+        {
+          ...rows[0],
+          similarity: 0.1,
+          distance: 0.9,
+          hybrid_score: 0.92,
+        },
+      ],
+    });
+    const { openai } = createOpenAIMock();
+
+    const result = await runSearchWithRanking({
+      config,
+      request: {
+        query: "hybrid query",
+        filters: {},
+        limit: 5,
+        similarityThreshold: 0.8,
+        searchMaxLoopCount: config.searchMaxLoopCount,
+      },
+      deps: {
+        supabase: supabaseMock.supabase,
+        openai,
+        logger: createLogger("debug"),
+      },
+    });
+
+    expect(result.results).toHaveLength(1);
+    expect(result.initial.topSimilarity).toBeGreaterThanOrEqual(0.9);
+  });
+
+  it("keeps lexical-strong hits even when hybrid_score is low", async () => {
+    const rows = buildIndexRows([{ id: "lex", name: "AI コラムについて" }], { summary: "lexical" });
+    const supabaseMock = createSupabaseSearchMock({
+      rows,
+      vectorResults: [
+        {
+          ...rows[0],
+          distance: 0.8, // vector similarity = 0.2
+          similarity: 0.2,
+          hybrid_score: 0.25,
+          lexical: 0.9,
+        },
+      ],
+    });
+    const { openai } = createOpenAIMock();
+
+    const result = await runSearchWithRanking({
+      config,
+      request: {
+        query: "AI コラム",
+        filters: {},
+        limit: 5,
+        similarityThreshold: 0.7,
+        searchMaxLoopCount: config.searchMaxLoopCount,
+      },
+      deps: {
+        supabase: supabaseMock.supabase,
+        openai,
+        logger: createLogger("debug"),
+      },
+    });
+
+    expect(result.results).toHaveLength(1);
+    expect(result.initial.hitCount).toBe(1);
+    expect(result.initial.topSimilarity).toBeGreaterThanOrEqual(0.9);
+  });
 });

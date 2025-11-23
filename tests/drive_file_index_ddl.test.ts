@@ -18,6 +18,7 @@ describe("drive_file_index DDL", () => {
     expect(sql).toMatch(/CREATE\s+TABLE\s+IF\s+NOT\s+EXISTS\s+drive_file_index/i);
     expect(sql).toMatch(/file_id\s+TEXT\s+PRIMARY\s+KEY/i);
     expect(sql).toMatch(/file_name\s+TEXT\s+NOT\s+NULL/i);
+    expect(sql).toMatch(/file_name_tsv\s+TSVECTOR/i);
     expect(sql).toMatch(/summary\s+TEXT\s+NOT\s+NULL/i);
     expect(sql).toMatch(/keywords\s+TEXT\[\]/i);
     expect(sql).toMatch(/embedding\s+VECTOR\(1536\)\s+NOT\s+NULL/i);
@@ -25,7 +26,7 @@ describe("drive_file_index DDL", () => {
     expect(sql).toMatch(/mime_type\s+TEXT\s+NOT\s+NULL/i);
   });
 
-  it("creates indexes for drive_modified_at and embedding ivfflat with lists=100", () => {
+  it("creates indexes for drive_modified_at, embedding ivfflat, and file_name_tsv gin", () => {
     const sql = readSql();
 
     expect(sql).toMatch(
@@ -35,5 +36,15 @@ describe("drive_file_index DDL", () => {
     expect(sql).toMatch(
       /CREATE\s+INDEX\s+(?:IF\s+NOT\s+EXISTS\s+)?drive_file_index_embedding_idx\s+ON\s+drive_file_index\s+USING\s+ivfflat\s*\(\s*embedding\s+vector_cosine_ops\s*\)\s*WITH\s*\(\s*lists\s*=\s*100\s*\)/i,
     );
+
+    expect(sql).toMatch(
+      /CREATE\s+INDEX\s+(?:IF\s+NOT\s+EXISTS\s+)?idx_drive_file_name_tsv\s+ON\s+drive_file_index\s+USING\s+gin\s*\(\s*file_name_tsv\s*\)/i,
+    );
+  });
+
+  it("defines trigger to keep file_name_tsv in sync", () => {
+    const sql = readSql();
+    expect(sql).toMatch(/CREATE\s+OR\s+REPLACE\s+FUNCTION\s+drive_file_index_set_tsv/i);
+    expect(sql).toMatch(/CREATE\s+TRIGGER\s+trg_drive_file_name_tsv/i);
   });
 });

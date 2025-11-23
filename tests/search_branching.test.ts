@@ -154,9 +154,9 @@ describe("runSearchWithRanking branching", () => {
     expect(result.finalSimilarityThreshold).toBeLessThanOrEqual(SIMILARITY_HIGH);
   });
 
-  it("triggers refinement when top similarity is below 0.75", async () => {
+  it("triggers refinement when top similarity is low", async () => {
     const vectorSearch = buildVectorSearchStub([
-      { count: 5, similarity: 0.74 },
+      { count: 20, similarity: 0.45 },
       { count: 3, similarity: 0.9 },
     ]);
     const askUser = vi.fn<() => Promise<string>>().mockResolvedValue("絞り込み");
@@ -181,10 +181,40 @@ describe("runSearchWithRanking branching", () => {
     });
 
     expect(vectorSearch).toHaveBeenCalledTimes(2);
-    expect(result.initial.topSimilarity).toBeLessThan(0.75);
+    expect(result.initial.topSimilarity).toBeLessThan(0.5);
     expect(result.finalBucket).toBe("few");
     expect(result.results).toHaveLength(3);
     expect(result.loopLimitReached).toBe(false);
+  });
+
+  it("does not ask for refinement when few low-similarity hits are found", async () => {
+    const vectorSearch = buildVectorSearchStub([{ count: 3, similarity: 0.72 }]);
+    const askUser = vi.fn<() => Promise<string>>();
+    const { openai } = createOpenAIMock();
+
+    const result = await runSearchWithRanking({
+      config: baseConfig,
+      request: {
+        query: "few low similarity",
+        filters: {},
+        limit: 10,
+        similarityThreshold: 0.7,
+        searchMaxLoopCount: baseConfig.searchMaxLoopCount,
+      },
+      deps: {
+        supabase: createSupabaseStub(),
+        openai,
+        vectorSearch,
+        askUser,
+        logger: createLogger("debug"),
+      },
+    });
+
+    expect(vectorSearch).toHaveBeenCalledTimes(1);
+    expect(askUser).not.toHaveBeenCalled();
+    expect(result.finalBucket).toBe("few");
+    expect(result.reranked).toBe(true);
+    expect(result.results).toHaveLength(3);
   });
 
   it("does not ask for refinement when a single hit is found", async () => {
