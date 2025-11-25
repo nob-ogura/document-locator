@@ -98,6 +98,11 @@ export const upsertDriveFileIndex = async (
   await ensureOk(response);
 };
 
+export const upsertDriveFileIndexOne = async (
+  supabase: SupabaseClient,
+  row: DriveFileIndexUpsertRow,
+): Promise<void> => upsertDriveFileIndex(supabase, [row]);
+
 export const fetchDriveFileIndexByIds = async (
   supabase: SupabaseClient,
   ids: string[],

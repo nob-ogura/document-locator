@@ -77,7 +77,7 @@ describe("listDriveFilesPaged", () => {
     const secondCallParams = listMock.mock.calls[1]?.[0];
     expect(firstCallParams?.pageSize).toBe(100);
     expect(firstCallParams?.pageToken).toBeUndefined();
-    expect(firstCallParams?.q).toBeUndefined();
+    expect(firstCallParams?.q).toBe("('folderA' in parents) and trashed = false");
     expect(secondCallParams?.pageToken).toBe("token-1");
   });
 
@@ -104,7 +104,9 @@ describe("listDriveFilesPaged", () => {
     expect(listMock).toHaveBeenCalledTimes(1);
     const params = listMock.mock.calls[0]?.[0];
     expect(params?.pageSize).toBe(100);
-    expect(params?.q).toBe("modifiedTime > '2024-09-01T00:00:00Z'");
+    expect(params?.q).toBe(
+      "(modifiedTime > '2024-09-01T00:00:00Z' and 'folderA' in parents) and trashed = false",
+    );
   });
 
   it("mode=diff で drive_sync_state と同一の modifiedTime を除外する", async () => {
@@ -213,7 +215,9 @@ describe("listDriveFilesPaged", () => {
     ]);
 
     const queryParam = listMock.mock.calls[0]?.[0];
-    expect(queryParam?.q).toBe("modifiedTime > '2024-09-01T00:00:00Z'");
+    expect(queryParam?.q).toBe(
+      "(modifiedTime > '2024-09-01T00:00:00Z' and 'root-target' in parents) and trashed = false",
+    );
 
     expect(files.map((f) => f.id)).toEqual(expect.arrayContaining(["child-A", "child-B", "new-1"]));
     expect(files.some((f) => f.id === "old-1")).toBe(false);

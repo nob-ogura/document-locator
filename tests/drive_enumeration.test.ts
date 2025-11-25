@@ -94,7 +94,9 @@ describe("drive enumeration with limit and mime filtering", () => {
     expect(listMock).toHaveBeenCalledTimes(1);
 
     const params = listMock.mock.calls[0]?.[0];
-    expect(params?.q).toBe(`modifiedTime > '${driveModifiedAt}'`);
+    expect(params?.q).toBe(
+      `(modifiedTime > '${driveModifiedAt}' and 'folderA' in parents) and trashed = false`,
+    );
 
     expect(result.files).toHaveLength(6);
     expect(result.processable.map((f) => f.id)).toEqual(["doc-1", "pdf-1", "doc-2"]);

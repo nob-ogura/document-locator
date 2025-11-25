@@ -51,10 +51,10 @@ describe("logCrawlerSummary", () => {
 
     const summary = logCrawlerSummary(input, logger);
 
-    expect(summary).toEqual({ processed: 3, skipped: 1, upserted: 2, failed: 2 });
+    expect(summary).toEqual({ processed: 3, skipped: 1, upserted: 2, failed: 1 });
     expect(logger.info).toHaveBeenCalledWith(
       expect.stringMatching(/processed=3/),
-      expect.objectContaining({ processed: 3, skipped: 1, upserted: 2, failed: 2 }),
+      expect.objectContaining({ processed: 3, skipped: 1, upserted: 2, failed: 1 }),
     );
   });
 });

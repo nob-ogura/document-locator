@@ -1,6 +1,7 @@
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { syncSupabaseIndex } from "../src/crawler.ts";
 import type { DriveFileEntry } from "../src/drive.ts";
+import * as driveFileIndexRepo from "../src/drive_file_index_repository.js";
 import { baseConfig } from "./fixtures/config.ts";
 import {
   createDriveMock,
@@ -17,6 +18,11 @@ const pdfParseMock = vi.hoisted(() => vi.fn());
 vi.mock("pdf-parse", () => ({ default: pdfParseMock }));
 
 describe("crawler mock e2e", () => {
+  beforeEach(() => {
+    // Provide a default pdf-parse response so PDF files produce text unless a test overrides it.
+    pdfParseMock.mockResolvedValue({ text: "pdf text" });
+  });
+
   afterEach(() => {
     vi.restoreAllMocks();
     pdfParseMock.mockReset();
@@ -211,7 +217,9 @@ describe("crawler mock e2e", () => {
     ]);
 
     const firstParams = list.mock.calls[0]?.[0];
-    expect(firstParams?.q).toBe("modifiedTime > '2024-10-01T00:00:00Z'");
+    expect(firstParams?.q).toBe(
+      "(modifiedTime > '2024-10-01T00:00:00Z' and 'root-target' in parents) and trashed = false",
+    );
 
     expect(result.processable.map((f) => f.id)).toEqual(["text-1"]);
     expect(result.processed.map((f) => f.id)).toEqual(["text-1"]);
@@ -223,5 +231,52 @@ describe("crawler mock e2e", () => {
     expect(result.upsertedCount).toBe(1);
     expect(result.latestDriveModifiedAt).toBe("2024-10-02T00:00:00Z");
     expect(getSyncState()).toBe("2024-10-02T00:00:00Z");
+  });
+
+  it("1 件失敗しても残りを upsert し、最新 sync state を進める", async () => {
+    const files: DriveFileEntry[] = [
+      {
+        id: "ok-1",
+        name: "ok-1",
+        mimeType: "text/plain",
+        modifiedTime: "2024-10-01T00:00:00Z",
+      },
+      {
+        id: "fail-1",
+        name: "fail-1",
+        mimeType: "text/plain",
+        modifiedTime: "2024-10-02T00:00:00Z",
+      },
+      {
+        id: "ok-2",
+        name: "ok-2",
+        mimeType: "text/plain",
+        modifiedTime: "2024-10-03T00:00:00Z",
+      },
+    ];
+
+    const { drive } = createDriveMock(files);
+    const { supabase, upserts, getSyncState } = createSupabaseIndexMock();
+    const { openai } = createOpenAIMock();
+
+    const realUpsert = driveFileIndexRepo.upsertDriveFileIndexOne;
+    vi.spyOn(driveFileIndexRepo, "upsertDriveFileIndexOne").mockImplementation(
+      async (client, row) => {
+        if (row.file_id === "fail-1") throw new Error("intentional failure");
+        return realUpsert(client, row);
+      },
+    );
+
+    const result = await syncSupabaseIndex({
+      config: baseConfig,
+      mode: "full",
+      deps: { googleDrive: drive, supabase, openai, logger: drive.logger },
+    });
+
+    expect(upserts.map((row) => row.file_id)).toEqual(["ok-1", "ok-2"]);
+    expect(result.upsertedCount).toBe(2);
+    expect(result.failedUpserts).toEqual([{ fileId: "fail-1", error: "intentional failure" }]);
+    expect(result.latestDriveModifiedAt).toBe("2024-10-03T00:00:00Z");
+    expect(getSyncState()).toBe("2024-10-03T00:00:00Z");
   });
 });

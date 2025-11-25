@@ -32,6 +32,7 @@ const DEFAULT_FIELDS = "files(id,name,mimeType,modifiedTime),nextPageToken";
 const DEFAULT_ORDER = "modifiedTime asc";
 const DEFAULT_MAX_RETRIES = 5;
 const DEFAULT_BASE_DELAY_MS = 1000;
+const TRASH_FILTER = "trashed = false";
 const FOLDER_MIME_TYPE = "application/vnd.google-apps.folder";
 
 const sleep = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms));
@@ -123,22 +124,38 @@ const buildModifiedTimeFilter = (
   return `modifiedTime > '${syncState.drive_modified_at}'`;
 };
 
+const mergeQuery = (base?: string): string => {
+  if (!base || base.trim() === "") return TRASH_FILTER;
+  return `(${base}) and ${TRASH_FILTER}`;
+};
+
 const buildListParams = (
   q: string | undefined,
   pageSize: number,
   pageToken: string | undefined,
   fields: string,
   parents?: string[],
-): GoogleDriveFilesListParams => ({
-  q,
-  pageSize,
-  pageToken,
-  fields,
-  parents,
-  orderBy: DEFAULT_ORDER,
-  includeItemsFromAllDrives: true,
-  supportsAllDrives: true,
-});
+): GoogleDriveFilesListParams => {
+  const parentsFilter = parents?.length
+    ? parents
+        .filter(Boolean)
+        .map((id) => `'${id}' in parents`)
+        .join(" or ")
+    : undefined;
+
+  const combinedQuery = [q, parentsFilter].filter(Boolean).join(" and ") || undefined;
+
+  return {
+    q: mergeQuery(combinedQuery),
+    pageSize,
+    pageToken,
+    fields,
+    parents,
+    orderBy: DEFAULT_ORDER,
+    includeItemsFromAllDrives: true,
+    supportsAllDrives: true,
+  } satisfies GoogleDriveFilesListParams;
+};
 
 const filterBySyncState = (
   files: DriveFileEntry[],

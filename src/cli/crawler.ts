@@ -132,6 +132,10 @@ program
       });
 
       logCrawlerSummary(result, logger);
+
+      if (result.interrupted) {
+        process.exit(1);
+      }
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       if (logger) {
